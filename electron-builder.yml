@@ -1,0 +1,44 @@
+appId: com.luo.app
+productName: 泺的应用时长监视器
+copyright: "Copyright © 2026 luo-dev"
+
+directories:
+  buildResources: build
+  output: dist
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/better-sqlite3/**"
+
+files:
+  - out/**/*
+  - "!node_modules/**/*"
+  - node_modules/**/*.node
+  - node_modules/better-sqlite3/**/*
+  - node_modules/bindings/**/*
+  - node_modules/file-uri-to-path/**/*
+
+compression: maximum
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  extraResources:
+    - from: resources/
+      to: resources/
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  shortcutName: 泺
+  uninstallDisplayName: "泺的应用时长监视器"
+  menuCategory: true
