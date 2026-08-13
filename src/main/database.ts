@@ -5,6 +5,20 @@ import fs from 'fs'
 
 let db: Database.Database
 
+/**
+ * Returns the local date as "YYYY-MM-DD".
+ *
+ * NOTE: new Date().toISOString() returns UTC time, which in UTC+8 (China) would
+ * attribute the first 8 hours of each day to the previous day. Use local time
+ * fields instead to keep daily usage/goal tracking aligned with wall-clock time.
+ */
+export function localDate(d: Date = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function initDatabase(): void {
   const userDataPath = app.getPath('userData')
   if (!fs.existsSync(userDataPath)) {
@@ -91,6 +105,16 @@ function createTables(): void {
   `)
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS goal_programs (
+      goal_id INTEGER NOT NULL,
+      program_id INTEGER NOT NULL,
+      PRIMARY KEY (goal_id, program_id),
+      FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+      FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
+    )
+  `)
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS user_profile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nickname TEXT NOT NULL DEFAULT 'User',
@@ -128,6 +152,19 @@ function runMigrations(): void {
   migrateGoalsAddGoalType()
   migrateUserProfileAddGuiScale()
   migrateUserProfileAddFloatingBallColor()
+  migrateGoalsToJunctionTable()
+}
+
+/**
+ * Migrates the legacy single `goals.program_id` into the many-to-many
+ * `goal_programs` junction table. Idempotent (INSERT OR IGNORE on the
+ * composite PK means re-runs are no-ops).
+ */
+function migrateGoalsToJunctionTable(): void {
+  db.exec(`
+    INSERT OR IGNORE INTO goal_programs (goal_id, program_id)
+    SELECT id, program_id FROM goals WHERE program_id IS NOT NULL
+  `)
 }
 
 function migrateGoalsAddGoalType(): void {
@@ -236,7 +273,7 @@ export function deleteProgram(id: number): void {
 // ==================== Daily Usage ====================
 
 export function getTodayUsage(): any[] {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDate()
   return db
     .prepare(
       `
@@ -281,7 +318,7 @@ export function getProgramUsage(programId: number, range: '7d' | '30d'): any[] {
   const days = range === '7d' ? 7 : 30
   const cutoffDate = new Date()
   cutoffDate.setDate(cutoffDate.getDate() - days)
-  const cutoff = cutoffDate.toISOString().slice(0, 10)
+  const cutoff = localDate(cutoffDate)
 
   return db
     .prepare(
@@ -299,7 +336,7 @@ export function getProgramUsage(programId: number, range: '7d' | '30d'): any[] {
 
 export function startSession(programId: number): any {
   const now = new Date()
-  const dateStr = now.toISOString().slice(0, 10)
+  const dateStr = localDate(now)
   const timeStr = now.toISOString()
 
   const result = db
@@ -384,9 +421,34 @@ export function getTotalUsageForDate(date: string): number {
 
 // ==================== Goals ====================
 
+/** Returns the list of program ids associated with a goal. */
+export function getGoalProgramIds(goalId: number): number[] {
+  return db
+    .prepare('SELECT program_id FROM goal_programs WHERE goal_id = ? ORDER BY program_id')
+    .all(goalId)
+    .map((r: any) => r.program_id)
+}
+
+/** Replaces a goal's associated programs with the given list. */
+export function setGoalPrograms(goalId: number, programIds: number[]): void {
+  db.prepare('DELETE FROM goal_programs WHERE goal_id = ?').run(goalId)
+  const insert = db.prepare('INSERT OR IGNORE INTO goal_programs (goal_id, program_id) VALUES (?, ?)')
+  for (const pid of programIds) {
+    insert.run(goalId, pid)
+  }
+}
+
+/**
+ * Sums today's usage (from a usageMap keyed by program_id) across the given
+ * program ids. Returns 0 when the list is empty.
+ */
+function sumUsage(programIds: number[], usageMap: Map<number, number>): number {
+  return programIds.reduce((sum, pid) => sum + (usageMap.get(pid) ?? 0), 0)
+}
+
 export function getGoals(): any[] {
   const goals: any[] = db.prepare('SELECT * FROM goals ORDER BY created_at DESC').all()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDate()
   const todayUsage: any[] = db
     .prepare(`
       SELECT program_id, total_seconds FROM daily_usage WHERE date = ?
@@ -395,27 +457,29 @@ export function getGoals(): any[] {
   const totalToday = todayUsage.reduce((sum: number, u: any) => sum + u.total_seconds, 0)
 
   return goals.map((goal: any) => {
-    let current_progress = 0
-    if (goal.program_id) {
-      current_progress = usageMap.get(goal.program_id) ?? 0
-    } else {
-      current_progress = totalToday
-    }
-    return { ...goal, current_progress }
+    const programIds = getGoalProgramIds(goal.id)
+    const current_progress = programIds.length > 0
+      ? sumUsage(programIds, usageMap)
+      : totalToday
+    return { ...goal, program_ids: programIds, current_progress }
   })
 }
 
 export function getGoal(id: number): any {
   const goal: any = db.prepare('SELECT * FROM goals WHERE id = ?').get(id)
   if (!goal) return null
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDate()
+  const programIds = getGoalProgramIds(goal.id)
   let current_progress = 0
-  if (goal.program_id) {
-    current_progress = getProgramUsageForDate(goal.program_id, today)
+  if (programIds.length > 0) {
+    current_progress = programIds.reduce(
+      (sum, pid) => sum + getProgramUsageForDate(pid, today),
+      0
+    )
   } else {
     current_progress = getTotalUsageForDate(today)
   }
-  return { ...goal, current_progress }
+  return { ...goal, program_ids: programIds, current_progress }
 }
 
 export function addGoal(data: {
@@ -426,11 +490,11 @@ export function addGoal(data: {
   remind_time?: string | null
   remind_enabled?: number
   card_image_path?: string | null
-  program_id?: number | null
+  program_ids?: number[]
 }): any {
   const stmt = db.prepare(`
-    INSERT INTO goals (name, description, daily_limit_seconds, goal_type, remind_time, remind_enabled, card_image_path, program_id)
-    VALUES (@name, @description, @daily_limit_seconds, @goal_type, @remind_time, @remind_enabled, @card_image_path, @program_id)
+    INSERT INTO goals (name, description, daily_limit_seconds, goal_type, remind_time, remind_enabled, card_image_path)
+    VALUES (@name, @description, @daily_limit_seconds, @goal_type, @remind_time, @remind_enabled, @card_image_path)
   `)
   const result = stmt.run({
     name: data.name,
@@ -439,17 +503,21 @@ export function addGoal(data: {
     goal_type: data.goal_type ?? 'achievement',
     remind_time: toSQLiteValue(data.remind_time),
     remind_enabled: toSQLiteValue(data.remind_enabled ?? true),
-    card_image_path: toSQLiteValue(data.card_image_path),
-    program_id: toSQLiteValue(data.program_id)
+    card_image_path: toSQLiteValue(data.card_image_path)
   })
-  return db.prepare('SELECT * FROM goals WHERE id = ?').get(result.lastInsertRowid)
+  const goalId = result.lastInsertRowid as number
+  setGoalPrograms(goalId, data.program_ids ?? [])
+  return getGoal(goalId)
 }
 
 export function updateGoal(id: number, data: Partial<any>): any {
+  // program_ids is handled via the junction table, not a goals column
+  const { program_ids, ...rest } = data
+
   const fields: string[] = []
   const values: any[] = []
 
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(rest)) {
     if (key !== 'id') {
       fields.push(`${key} = ?`)
       values.push(toSQLiteValue(value))
@@ -457,12 +525,20 @@ export function updateGoal(id: number, data: Partial<any>): any {
   }
 
   if (fields.length === 0) {
+    if (program_ids !== undefined) {
+      setGoalPrograms(id, program_ids)
+    }
     return getGoal(id)
   }
 
   values.push(id)
   db.prepare(`UPDATE goals SET ${fields.join(', ')} WHERE id = ?`).run(...values)
-  return db.prepare('SELECT * FROM goals WHERE id = ?').get(id)
+
+  if (program_ids !== undefined) {
+    setGoalPrograms(id, program_ids)
+  }
+
+  return getGoal(id)
 }
 
 export function deleteGoal(id: number): void {
@@ -575,4 +651,53 @@ export function endAllSessions(): void {
   for (const session of activeSessions) {
     endSession(session.id)
   }
+}
+
+// ==================== Backup / Restore ====================
+
+// Dependency order for import (parents before children) and its reverse for clear.
+const BACKUP_INSERT_ORDER = [
+  'programs',
+  'user_profile',
+  'goals',
+  'goal_programs',
+  'usage_sessions',
+  'daily_usage',
+  'goal_completions',
+  'pomodoro_sessions'
+]
+
+/** Dumps every table's rows as an object keyed by table name. */
+export function exportAllData(): Record<string, any[]> {
+  const result: Record<string, any[]> = {}
+  for (const table of BACKUP_INSERT_ORDER) {
+    result[table] = db.prepare(`SELECT * FROM ${table}`).all()
+  }
+  return result
+}
+
+/**
+ * Replaces ALL data with the provided rows. Runs in a single transaction so
+ * either everything is restored or nothing changes.
+ */
+export function importAllData(data: Record<string, any[]>): void {
+  const clearOrder = [...BACKUP_INSERT_ORDER].reverse()
+
+  const tx = db.transaction(() => {
+    for (const table of clearOrder) {
+      db.exec(`DELETE FROM ${table}`)
+    }
+    for (const table of BACKUP_INSERT_ORDER) {
+      const rows = data[table] || []
+      for (const row of rows) {
+        const columns = Object.keys(row)
+        const colNames = columns.join(', ')
+        const placeholders = columns.map(() => '?').join(', ')
+        db.prepare(`INSERT INTO ${table} (${colNames}) VALUES (${placeholders})`)
+          .run(...columns.map((c) => toSQLiteValue(row[c])))
+      }
+    }
+  })
+
+  tx()
 }

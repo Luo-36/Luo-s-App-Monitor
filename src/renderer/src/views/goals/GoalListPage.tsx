@@ -39,8 +39,8 @@ export const GoalListPage: React.FC = () => {
     const liveTotalToday = totalToday + (liveProg ? liveProg.elapsedSeconds : 0)
     setGoals(prev => prev.map(g => ({
       ...g,
-      current_progress: g.program_id
-        ? (usageMap.get(g.program_id) ?? 0)
+      current_progress: (g.program_ids && g.program_ids.length > 0)
+        ? g.program_ids.reduce((sum, pid) => sum + (usageMap.get(pid) ?? 0), 0)
         : liveTotalToday
     })))
   }, [])

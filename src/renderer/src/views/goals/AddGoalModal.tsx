@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import Modal from '@/components/ui/Modal'
 import Input from '@/components/ui/Input'
-import Select from '@/components/ui/Select'
 import TimePicker from '@/components/ui/TimePicker'
 import Button from '@/components/ui/Button'
 import ImageCropper from '@/components/image/ImageCropper'
@@ -20,7 +19,7 @@ interface AddGoalModalProps {
     goal_type?: 'achievement' | 'restriction'
     daily_limit_seconds: number
     remind_time: string | null
-    program_id: number | null
+    program_ids: number[]
     card_image_path: string | null
   }
 }
@@ -45,8 +44,8 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
       : '0'
   )
   const [remindTime, setRemindTime] = useState(editGoal?.remind_time ?? '')
-  const [selectedProgramId, setSelectedProgramId] = useState(
-    editGoal?.program_id?.toString() ?? ''
+  const [selectedProgramIds, setSelectedProgramIds] = useState<number[]>(
+    editGoal?.program_ids ?? []
   )
   const [cardSrc, setCardSrc] = useState<string | null>(editGoal?.card_image_path ?? null)
   const [programs, setPrograms] = useState<Program[]>([])
@@ -64,7 +63,7 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
     setHours(editGoal ? Math.floor(editGoal.daily_limit_seconds / 3600).toString() : '1')
     setMinutes(editGoal ? Math.floor((editGoal.daily_limit_seconds % 3600) / 60).toString() : '0')
     setRemindTime(editGoal?.remind_time ?? '')
-    setSelectedProgramId(editGoal?.program_id?.toString() ?? '')
+    setSelectedProgramIds(editGoal?.program_ids ?? [])
     setCardSrc(editGoal?.card_image_path ?? null)
     setError('')
   }, [editGoal, isOpen])
@@ -120,7 +119,7 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
         goal_type: goalType,
         remind_time: remindTime || null,
         remind_enabled: remindTime ? 1 : 0,
-        program_id: selectedProgramId ? parseInt(selectedProgramId) : null,
+        program_ids: selectedProgramIds,
         card_image_path: cardSrc
       }
 
@@ -139,10 +138,11 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
     }
   }
 
-  const programOptions = [
-    { value: '', label: '不关联' },
-    ...programs.map((p) => ({ value: p.id.toString(), label: p.name }))
-  ]
+  const toggleProgram = (pid: number) => {
+    setSelectedProgramIds((prev) =>
+      prev.includes(pid) ? prev.filter((id) => id !== pid) : [...prev, pid]
+    )
+  }
 
   return (
     <>
@@ -276,12 +276,33 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
             </div>
           </div>
 
-          <Select
-            label="关联程序"
-            value={selectedProgramId}
-            onChange={setSelectedProgramId}
-            options={programOptions}
-          />
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-text-secondary">
+              关联程序（可多选，留空表示统计全部程序）
+            </label>
+            <div className="max-h-40 overflow-y-auto rounded-xl bg-white/5 border border-white/10 p-2 space-y-0.5">
+              {programs.length === 0 ? (
+                <p className="text-xs text-text-secondary/60 px-2 py-1">
+                  暂无程序，请先在「我的程序」页添加
+                </p>
+              ) : (
+                programs.map((p) => (
+                  <label
+                    key={p.id}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedProgramIds.includes(p.id)}
+                      onChange={() => toggleProgram(p.id)}
+                      className="accent-primary w-4 h-4"
+                    />
+                    <span className="text-sm text-white">{p.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
 
           <TimePicker
             label="提醒时刻"

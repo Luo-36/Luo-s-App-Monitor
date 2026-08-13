@@ -1,13 +1,13 @@
 import { app, BrowserWindow, shell, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { initDatabase, getUserProfile } from './database'
+import { initDatabase, getUserProfile, localDate } from './database'
 import { UsageTracker } from './tracker'
 import { PomodoroEngine } from './pomodoro-engine'
 import { registerIpcHandlers } from './ipc-handlers'
 import { FloatingBallWindow } from './floating-ball-window'
 import { setupTray, destroyTray, updateTrayMenu } from './tray'
-import { setAutoStart, isAutoStartEnabled } from './auto-launch'
+import { setAutoStart } from './auto-launch'
 import { checkGoalCompletion } from './ipc-handlers'
 
 let mainWindow: BrowserWindow | null = null
@@ -101,7 +101,7 @@ function setup(): void {
   tracker = new UsageTracker(mainWindow)
   tracker.onTick((liveProg) => {
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate()
       checkGoalCompletion(today, liveProg)
     } catch {}
   })
@@ -153,7 +153,7 @@ function setup(): void {
   //     Primary check happens on every tracking tick (~3s)
   setInterval(() => {
     try {
-      checkGoalCompletion(new Date().toISOString().slice(0, 10))
+      checkGoalCompletion(localDate())
     } catch (err) {
       console.error('Failed to check goal completions:', err)
     }

@@ -88,3 +88,36 @@ export function getImagePath(fileName: string): string {
   }
   return path.join(getImageDir(), fileName)
 }
+
+/**
+ * Deletes an old image file when it has been replaced by a new one.
+ *
+ * Used when a program/goal/profile image path is updated, so the previous
+ * image file on disk doesn't linger as an orphan. Only deletes files that
+ * live inside userData/images/ (never arbitrary user paths).
+ *
+ * @param oldPath Previous image path (absolute or relative under images/), may be null
+ * @param newPath New image path, may be null
+ */
+export function deleteImageIfReplaced(
+  oldPath: string | null | undefined,
+  newPath: string | null | undefined
+): void {
+  if (!oldPath || oldPath === newPath) return
+
+  const imagesDir = getImageDir()
+  const resolved = path.isAbsolute(oldPath)
+    ? oldPath
+    : path.join(imagesDir, oldPath)
+
+  // Safety: only delete files inside userData/images/
+  if (resolved !== imagesDir && !resolved.startsWith(imagesDir + path.sep)) {
+    return
+  }
+
+  fs.unlink(resolved, (err) => {
+    if (err && err.code !== 'ENOENT') {
+      console.error(`[image-helper] Failed to delete old image ${resolved}:`, err)
+    }
+  })
+}

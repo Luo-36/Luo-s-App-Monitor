@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { FolderOpen } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Input from '@/components/ui/Input'
@@ -19,13 +19,16 @@ interface AddProgramModalProps {
     icon_path: string | null
     card_image_path: string | null
   }
+  /** Pre-fill the process name when adding a new program (auto-capture flow). */
+  initialProcessName?: string
 }
 
 export const AddProgramModal: React.FC<AddProgramModalProps> = ({
   isOpen,
   onClose,
   onSaved,
-  editProgram
+  editProgram,
+  initialProcessName
 }) => {
   const [name, setName] = useState(editProgram?.name ?? '')
   const [processName, setProcessName] = useState(editProgram?.process_name ?? '')
@@ -36,6 +39,16 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Reset form state when the modal opens or editProgram changes,
+  // so editing a card pre-fills its existing values (name/icon/card image).
+  useEffect(() => {
+    setName(editProgram?.name ?? '')
+    setProcessName(editProgram?.process_name ?? initialProcessName ?? '')
+    setIconSrc(editProgram?.icon_path ?? null)
+    setCardSrc(editProgram?.card_image_path ?? null)
+    setError('')
+  }, [editProgram, isOpen, initialProcessName])
 
   const handleSelectProcess = async () => {
     const result = await api.openFileDialog([

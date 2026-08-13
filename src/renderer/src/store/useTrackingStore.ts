@@ -15,6 +15,7 @@ interface TrackingState {
   setCurrentProgram: (prog: TrackingTick['currentProgram']) => void
   setSortMode: (mode: SortMode) => void
   toggleSortOrder: () => void
+  updateFromTick: (data: TrackingTick) => void
 
   /** Computed: sorted entries based on current sortMode and order */
   sortedUsage: () => UsageEntry[]

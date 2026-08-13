@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, ScanLine } from 'lucide-react'
 import type { Program, UsageEntry } from '@/types'
 import { api } from '@/api/bridge'
 import { useTrackingStore } from '@/store/useTrackingStore'
 import ProgramCard from '@/components/cards/ProgramCard'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
+import Modal from '@/components/ui/Modal'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 import AddProgramModal from './AddProgramModal'
 
@@ -14,6 +15,9 @@ export const ProgramListPage: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingProgram, setEditingProgram] = useState<Program | null>(null)
+  const [autoAddProcess, setAutoAddProcess] = useState<string | null>(null)
+  const [capturing, setCapturing] = useState(false)
+  const [capturedProcess, setCapturedProcess] = useState<string | null>(null)
   const { todayUsage, updateFromTick, currentProgram, detectedProcess } = useTrackingStore()
 
   const formatDuration = (seconds: number): string => {
@@ -46,8 +50,14 @@ export const ProgramListPage: React.FC = () => {
       updateFromTick(data)
     })
 
+    const unsubCapture = api.onCaptureDetected((processName) => {
+      setCapturing(false)
+      setCapturedProcess(processName)
+    })
+
     return () => {
       unsubTick()
+      unsubCapture()
     }
   }, [])
 
@@ -80,11 +90,40 @@ export const ProgramListPage: React.FC = () => {
   const handleCloseModal = () => {
     setShowAddModal(false)
     setEditingProgram(null)
+    setAutoAddProcess(null)
   }
 
   const handleSaved = () => {
     loadPrograms()
     setEditingProgram(null)
+    setAutoAddProcess(null)
+  }
+
+  const handleStartCapture = async () => {
+    setCapturing(true)
+    setCapturedProcess(null)
+    try {
+      await api.startCapture()
+    } catch (err) {
+      console.error('Failed to start capture:', err)
+      setCapturing(false)
+    }
+  }
+
+  const handleCancelCapture = async () => {
+    setCapturing(false)
+    setCapturedProcess(null)
+    try {
+      await api.stopCapture()
+    } catch {}
+  }
+
+  const handleConfirmAdd = () => {
+    if (capturedProcess) {
+      setAutoAddProcess(capturedProcess)
+      setCapturedProcess(null)
+      setShowAddModal(true)
+    }
   }
 
   if (loading) {
@@ -126,10 +165,16 @@ export const ProgramListPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">我的程序</h1>
-        <Button onClick={() => setShowAddModal(true)}>
-          <Plus className="w-4 h-4" />
-          添加程序
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleStartCapture}>
+            <ScanLine className="w-4 h-4" />
+            自动添加
+          </Button>
+          <Button onClick={() => setShowAddModal(true)}>
+            <Plus className="w-4 h-4" />
+            添加程序
+          </Button>
+        </div>
       </div>
 
       {/* Program Grid */}
@@ -166,7 +211,42 @@ export const ProgramListPage: React.FC = () => {
         onClose={handleCloseModal}
         onSaved={handleSaved}
         editProgram={editingProgram ?? undefined}
+        initialProcessName={autoAddProcess ?? undefined}
       />
+
+      {/* Auto-add capture modal */}
+      <Modal
+        isOpen={capturing || capturedProcess !== null}
+        onClose={handleCancelCapture}
+        title="自动添加程序"
+        maxWidth="max-w-sm"
+      >
+        {capturing ? (
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-text-secondary">
+              请切换到你想添加的程序窗口，并保持聚焦 3 秒…
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={handleCancelCapture}>
+                取消
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-text-secondary">检测到进程：</p>
+            <p className="text-lg font-mono font-semibold text-white">
+              {capturedProcess}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={handleCancelCapture}>
+                取消
+              </Button>
+              <Button onClick={handleConfirmAdd}>添加</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

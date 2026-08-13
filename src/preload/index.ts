@@ -122,6 +122,14 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('data:clearAll')
   },
 
+  exportData(): Promise<string | null> {
+    return ipcRenderer.invoke('data:export')
+  },
+
+  importData(): Promise<boolean> {
+    return ipcRenderer.invoke('data:import')
+  },
+
   saveBackgroundImage(filePath: string): Promise<string | null> {
     return ipcRenderer.invoke('image:saveBackground', filePath)
   },
@@ -160,6 +168,15 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('floatingball:getState')
   },
 
+  // ===== Window Capture =====
+  startCapture(): Promise<void> {
+    return ipcRenderer.invoke('capture:start')
+  },
+
+  stopCapture(): Promise<void> {
+    return ipcRenderer.invoke('capture:stop')
+  },
+
   // ===== Events (main -> renderer) =====
   onTrackingTick(callback: (data: TrackingTick) => void): () => void {
     return safeOn('tracking:tick', callback)
@@ -179,6 +196,10 @@ const electronAPI: ElectronAPI = {
 
   onProfileUpdated(callback: (data: { hearts_count: number }) => void): () => void {
     return safeOn('profile:updated', callback)
+  },
+
+  onCaptureDetected(callback: (processName: string) => void): () => void {
+    return safeOn('capture:detected', callback)
   }
 }
 

@@ -43,10 +43,24 @@ export const GoalDetailPage: React.FC = () => {
         const g = await api.getGoal(Number(id))
         setGoal(g)
 
-        // Load 7 days of data if there's a related program
-        if (g?.program_id) {
-          const usage = await api.getProgramUsage(g.program_id, '7d')
-          setWeeklyData(usage)
+        // Load 7 days of usage, summed across all associated programs
+        const programIds = g?.program_ids ?? []
+        if (programIds.length > 0) {
+          const usages = await Promise.all(
+            programIds.map((pid) => api.getProgramUsage(pid, '7d'))
+          )
+          const dateMap = new Map<string, number>()
+          for (const usage of usages) {
+            for (const day of usage) {
+              dateMap.set(day.date, (dateMap.get(day.date) ?? 0) + day.total_seconds)
+            }
+          }
+          const merged: DailyUsage[] = Array.from(dateMap.entries())
+            .map(([date, total_seconds]) => ({ date, total_seconds }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+          setWeeklyData(merged)
+        } else {
+          setWeeklyData([])
         }
 
         // Load actual goal completions from DB for accurate count

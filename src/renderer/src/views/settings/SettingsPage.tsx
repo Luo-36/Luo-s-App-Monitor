@@ -169,6 +169,29 @@ export const SettingsPage: React.FC = () => {
     showMessage('已恢复默认设置，请点击"保存设置"以生效')
   }
 
+  const handleExport = async () => {
+    try {
+      const path = await api.exportData()
+      if (path) showMessage(`已导出到 ${path}`)
+    } catch (err) {
+      console.error('Failed to export data:', err)
+      showMessage('导出失败，请重试')
+    }
+  }
+
+  const handleImport = async () => {
+    if (!window.confirm('导入将覆盖当前所有数据（程序、目标、使用记录等），且不可撤销。确定继续吗？')) {
+      return
+    }
+    try {
+      const ok = await api.importData()
+      if (ok) showMessage('数据导入成功，请重启应用以完全生效')
+    } catch (err) {
+      console.error('Failed to import data:', err)
+      showMessage('导入失败：备份文件格式无效')
+    }
+  }
+
   const handleThemeChange = (colorKey: string) => {
     setLocalThemeColor(colorKey)
     // Theme IS the background — selecting a theme clears the background image
@@ -448,7 +471,21 @@ export const SettingsPage: React.FC = () => {
         <Button onClick={handleSave} loading={saving} className="w-full max-w-xs py-3 text-base">
           保存设置
         </Button>
-        <div className="pt-4 border-t border-white/10 w-full max-w-xs">
+        <div className="pt-4 border-t border-white/10 w-full max-w-xs space-y-2">
+          <Button
+            variant="secondary"
+            className="w-full py-2.5 text-sm"
+            onClick={handleExport}
+          >
+            导出数据 (JSON)
+          </Button>
+          <Button
+            variant="secondary"
+            className="w-full py-2.5 text-sm"
+            onClick={handleImport}
+          >
+            导入数据
+          </Button>
           <Button
             variant="danger"
             className="w-full py-2.5 text-sm"

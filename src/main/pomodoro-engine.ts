@@ -1,5 +1,5 @@
 import { BrowserWindow, Notification } from 'electron'
-import { addPomodoroSession, getUserProfile, updateUserProfile } from './database'
+import { addPomodoroSession, getUserProfile, updateUserProfile, localDate } from './database'
 
 interface PomodoroConfig {
   workMinutes: number
@@ -111,7 +111,7 @@ export class PomodoroEngine {
     this.clearIntervals()
 
     const now = new Date()
-    const dateStr = now.toISOString().slice(0, 10)
+    const dateStr = localDate(now)
 
     // Record completed session in database
     try {

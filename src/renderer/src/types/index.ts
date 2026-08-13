@@ -52,10 +52,10 @@ export interface Goal {
   remind_time: string | null
   remind_enabled: number
   card_image_path: string | null
-  program_id: number | null
+  program_ids: number[]
   is_active: number
   created_at: string
-  current_progress?: number // computed: today's usage for related program
+  current_progress?: number // computed: today's usage summed across related programs
   hearts_earned?: number // computed: completion count
 }
 
@@ -74,7 +74,7 @@ export interface CreateGoalDTO {
   remind_time?: string | null
   remind_enabled?: number
   card_image_path?: string | null
-  program_id?: number | null
+  program_ids?: number[]
 }
 
 /** Returns the display label for a goal type */
@@ -171,6 +171,8 @@ export interface ElectronAPI {
   getImagePath(fileName: string): Promise<string>
   saveBackgroundImage(filePath: string): Promise<string | null>
   clearAllData(): Promise<void>
+  exportData(): Promise<string | null>
+  importData(): Promise<boolean>
 
   // Icon Extraction
   extractExeIcon(exePath: string): Promise<string | null>
@@ -192,6 +194,11 @@ export interface ElectronAPI {
   // Floating Ball
   setFloatingBallEnabled(enabled: boolean): Promise<boolean>
   getFloatingBallEnabled(): Promise<boolean>
+
+  // Window Capture
+  startCapture(): Promise<void>
+  stopCapture(): Promise<void>
+  onCaptureDetected(callback: (processName: string) => void): () => void
 }
 
 declare global {

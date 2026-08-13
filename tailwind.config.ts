@@ -5,13 +5,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: 'rgb(var(--primary) / <alpha-value>)',
-        'primary-light': 'rgb(var(--primary-light) / <alpha-value>)',
-        'primary-dark': 'rgb(var(--primary-dark) / <alpha-value>)',
-        sidebar: 'rgb(var(--sidebar-bg) / <alpha-value>)',
-        'card-bg': 'rgb(var(--card-bg) / <alpha-value>)',
-        'text-primary': 'rgb(var(--text-primary) / <alpha-value>)',
-        'text-secondary': 'rgb(var(--text-secondary) / <alpha-value>)',
+        // NOTE: --primary etc. are COMMA-separated ("59, 130, 246") so use
+        // rgba(var(--x), <alpha-value>). Using rgb(var(--x) / <alpha-value>)
+        // with comma-separated values produces invalid CSS (rgb(59, 130, 246 / 1))
+        // which silently drops the color and renders transparent.
+        primary: 'rgba(var(--primary), <alpha-value>)',
+        'primary-light': 'rgba(var(--primary-light), <alpha-value>)',
+        'primary-dark': 'rgba(var(--primary-dark), <alpha-value>)',
+        sidebar: 'rgba(var(--sidebar-bg), <alpha-value>)',
+        'card-bg': 'rgba(var(--card-bg), <alpha-value>)',
+        'text-primary': 'rgba(var(--text-primary), <alpha-value>)',
+        'text-secondary': 'rgba(var(--text-secondary), <alpha-value>)',
       },
       fontFamily: {
         sans: ['"Microsoft YaHei"', '"PingFang SC"', 'sans-serif'],

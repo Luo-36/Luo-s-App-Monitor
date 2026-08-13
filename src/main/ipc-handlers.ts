@@ -25,10 +25,13 @@ import {
   updateUserProfile,
   getProgramUsageForDate,
   getTotalUsageForDate,
-  clearAllTrackingData
+  clearAllTrackingData,
+  localDate
 } from './database'
 import { setAutoStart, isAutoStartEnabled } from './auto-launch'
-import { saveImageFromBase64, deleteImageFile, getImagePath, getImageDir, ensureImageDir } from './image-helper'
+import { saveImageFromBase64, deleteImageFile, getImagePath, getImageDir, ensureImageDir, deleteImageIfReplaced } from './image-helper'
+import { exportDataToFile, importDataFromFile } from './backup'
+import { WindowCapture } from './capture'
 import { sendNotification } from './notification'
 
 let mainWindowRef: BrowserWindow
@@ -50,10 +53,24 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle('program:update', (_event, id: number, data) => {
+    const old = getProgram(id)
+    if (old) {
+      if ('icon_path' in data) {
+        deleteImageIfReplaced(old.icon_path, data.icon_path)
+      }
+      if ('card_image_path' in data) {
+        deleteImageIfReplaced(old.card_image_path, data.card_image_path)
+      }
+    }
     return updateProgram(id, data)
   })
 
   ipcMain.handle('program:delete', (_event, id: number) => {
+    const old = getProgram(id)
+    if (old) {
+      deleteImageIfReplaced(old.icon_path, null)
+      deleteImageIfReplaced(old.card_image_path, null)
+    }
     deleteProgram(id)
     tracker.updateProcessCache()
   })
@@ -87,10 +104,18 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle('goal:update', (_event, id: number, data) => {
+    const old = getGoal(id)
+    if (old && 'card_image_path' in data) {
+      deleteImageIfReplaced(old.card_image_path, data.card_image_path)
+    }
     return updateGoal(id, data)
   })
 
   ipcMain.handle('goal:delete', (_event, id: number) => {
+    const old = getGoal(id)
+    if (old) {
+      deleteImageIfReplaced(old.card_image_path, null)
+    }
     deleteGoal(id)
   })
 
@@ -118,6 +143,15 @@ export function registerIpcHandlers(
 
   ipcMain.handle('profile:update', async (_event, data) => {
     try {
+      const old = getUserProfile()
+      if (old) {
+        if ('avatar_path' in data) {
+          deleteImageIfReplaced(old.avatar_path, data.avatar_path)
+        }
+        if ('background_image_path' in data) {
+          deleteImageIfReplaced(old.background_image_path, data.background_image_path)
+        }
+      }
       const result = updateUserProfile(data)
       // Sync floating ball theme color when theme changes
       if (floatingBall && data.pomodoro_floating_ball_image !== undefined) {
@@ -154,6 +188,21 @@ export function registerIpcHandlers(
     if (mainWindowRef && !mainWindowRef.isDestroyed()) {
       mainWindowRef.webContents.send('profile:updated', { hearts_count: 0 })
     }
+  })
+
+  // ==================== Backup / Restore ====================
+
+  ipcMain.handle('data:export', async () => {
+    return exportDataToFile(mainWindow)
+  })
+
+  ipcMain.handle('data:import', async () => {
+    const ok = await importDataFromFile(mainWindow)
+    if (ok) {
+      // Refresh tracking cache so newly-imported programs are detected immediately
+      tracker.updateProcessCache()
+    }
+    return ok
   })
 
   // ==================== File Dialog ====================
@@ -345,6 +394,22 @@ try {
   ipcMain.handle('floatingball:getState', () => {
     return floatingBall ? floatingBall.getEnabled() : false
   })
+
+  // ==================== Window Capture (auto-add program) ====================
+
+  const capture = new WindowCapture()
+
+  ipcMain.handle('capture:start', () => {
+    capture.start((processName) => {
+      if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+        mainWindowRef.webContents.send('capture:detected', processName)
+      }
+    })
+  })
+
+  ipcMain.handle('capture:stop', () => {
+    capture.stop()
+  })
 }
 
 /**
@@ -363,27 +428,32 @@ export function checkGoalCompletion(
 ): void {
   const mw = mainWindowRef
   const goals: any[] = getGoals()
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = localDate()
   const isToday = date === todayStr
 
   for (const goal of goals) {
     if (!goal.is_active) continue
 
     const goalType: string = goal.goal_type || 'achievement'
+    const programIds: number[] = goal.program_ids || []
     let achievedSeconds = 0
 
-    if (goal.program_id) {
-      // Goal is tied to a specific program
+    if (programIds.length > 0) {
+      // Goal is tied to one or more programs — sum their usage
       if (isToday) {
         const usage: any[] = getTodayUsage()
-        const programUsage = usage.find((u: any) => u.program_id === goal.program_id)
-        achievedSeconds = programUsage ? programUsage.total_seconds : 0
-        // Add live elapsed time if this program is currently being tracked
-        if (liveCurrent && liveCurrent.programId === goal.program_id) {
+        achievedSeconds = usage
+          .filter((u: any) => programIds.includes(u.program_id))
+          .reduce((sum: number, u: any) => sum + u.total_seconds, 0)
+        // Add live elapsed time if the current program belongs to this goal
+        if (liveCurrent && programIds.includes(liveCurrent.programId)) {
           achievedSeconds += liveCurrent.elapsedSeconds
         }
       } else {
-        achievedSeconds = getProgramUsageForDate(goal.program_id, date)
+        achievedSeconds = programIds.reduce(
+          (sum: number, pid: number) => sum + getProgramUsageForDate(pid, date),
+          0
+        )
       }
     } else {
       // Goal is for total usage across all programs
