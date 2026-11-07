@@ -80,6 +80,8 @@ npm run package
 > electron_builder_binaries_mirror=https://npmmirror.com/mirrors/electron-builder-binaries/
 > ```
 
+> 安装包为向导式安装器，安装时可自行选择安装目录；覆盖升级时会沿用原来的安装路径。
+
 ## 📖 使用方法
 
 ### 1. 添加要追踪的程序
@@ -136,7 +138,9 @@ luo-app/
 │   │   ├── pomodoro-engine.ts # 番茄钟引擎
 │   │   ├── ipc-handlers.ts   # IPC 通信处理
 │   │   ├── tray.ts           # 系统托盘
-│   │   ├── floating-ball-window.ts # 悬浮球窗口
+│   │   ├── floating-ball-window.ts # 番茄钟悬浮球窗口
+│   │   ├── todo-floating-window.ts # 待办悬浮窗/悬浮球
+│   │   ├── reminder-scheduler.ts   # 定时提醒调度
 │   │   ├── auto-launch.ts    # 开机自启
 │   │   ├── notification.ts   # 系统通知
 │   │   └── image-helper.ts   # 图片处理
@@ -150,8 +154,9 @@ luo-app/
 │           ├── utils/        # 工具函数
 │           └── views/        # 页面
 │               ├── programs/   # 程序列表 & 详情
-│               ├── statistics/ # 数据统计
+│               ├── statistics/ # 数据统计 & 类别饼图
 │               ├── goals/      # 目标列表 & 详情
+│               ├── todo/       # 待办 & 定时提醒
 │               ├── profile/    # 用户页
 │               ├── pomodoro/   # 番茄钟
 │               └── settings/   # 设置
@@ -159,6 +164,31 @@ luo-app/
 ├── electron-builder.yml # 打包配置
 └── package.json
 ```
+
+## 📝 更新日志
+
+### v1.1.0（2026-11-07）
+
+**新增**
+- 待办清单：桌面置顶悬浮窗，可缩小为带未完成数量角标的悬浮球，可直接勾选/新增/删除
+- 定时提醒：设定 N 分钟后的系统级通知（含应用内兜底提醒与任务栏闪烁），持久化保存并支持过期补发
+- 程序类别：可为每个程序设置类别；统计页新增「今日 / 本周 / 本月」类别时间占比饼图，点击扇区可查看该类别下各程序的贡献时长
+- 使用时段分布：程序详情页可查看 0~24 时每小时使用时长（可切换最近 7 天）
+- 悬浮球自定义背景：番茄钟与待办悬浮球均支持上传背景图（支持透明 PNG）
+- 安装器支持在安装时选择安装目录
+
+**修复**
+- 程序/目标卡片与头像的图片裁剪不生效
+- 同名图片无法替换
+- 限制型目标在当天结束时不会加 ♥
+- 程序过多时统计柱状图挤在一起
+- 图表刻度出现过多小数位
+- Windows 系统通知可能不显示（补充 AppUserModelID 并保活通知对象）
+- 番茄钟悬浮球 hover 文字被窗口裁切
+
+### v1.0.0（2026-08）
+
+- 首个版本：应用时长追踪、目标管理、数据统计、番茄钟、主题与背景、数据备份等
 
 ## 📄 License
 
