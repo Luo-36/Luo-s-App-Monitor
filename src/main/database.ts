@@ -45,6 +45,7 @@ function createTables(): void {
       process_name TEXT NOT NULL UNIQUE,
       icon_path TEXT,
       card_image_path TEXT,
+      category TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
@@ -130,7 +131,27 @@ function createTables(): void {
       pomodoro_cycles INTEGER NOT NULL DEFAULT 4,
       pomodoro_floating_ball_image TEXT,
       pomodoro_floating_ball_enabled INTEGER NOT NULL DEFAULT 0,
-      auto_start INTEGER NOT NULL DEFAULT 0
+      auto_start INTEGER NOT NULL DEFAULT 0,
+      todo_floating_enabled INTEGER NOT NULL DEFAULT 0,
+      todo_floating_ball_image TEXT
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      is_done INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reminders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      remind_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
   `)
 
@@ -152,6 +173,9 @@ function runMigrations(): void {
   migrateGoalsAddGoalType()
   migrateUserProfileAddGuiScale()
   migrateUserProfileAddFloatingBallColor()
+  migrateUserProfileAddTodoFloating()
+  migrateUserProfileAddTodoBallImage()
+  migrateProgramsAddCategory()
   migrateGoalsToJunctionTable()
 }
 
@@ -210,6 +234,39 @@ function migrateUserProfileAddFloatingBallColor(): void {
   }
 }
 
+function migrateUserProfileAddTodoFloating(): void {
+  const columns: any[] = db.prepare('PRAGMA table_info(user_profile)').all()
+  const hasFlag = columns.some((col: any) => col.name === 'todo_floating_enabled')
+  if (!hasFlag) {
+    db.exec(`
+      ALTER TABLE user_profile
+      ADD COLUMN todo_floating_enabled INTEGER NOT NULL DEFAULT 0
+    `)
+  }
+}
+
+function migrateUserProfileAddTodoBallImage(): void {
+  const columns: any[] = db.prepare('PRAGMA table_info(user_profile)').all()
+  const hasImage = columns.some((col: any) => col.name === 'todo_floating_ball_image')
+  if (!hasImage) {
+    db.exec(`
+      ALTER TABLE user_profile
+      ADD COLUMN todo_floating_ball_image TEXT
+    `)
+  }
+}
+
+function migrateProgramsAddCategory(): void {
+  const columns: any[] = db.prepare('PRAGMA table_info(programs)').all()
+  const hasCategory = columns.some((col: any) => col.name === 'category')
+  if (!hasCategory) {
+    db.exec(`
+      ALTER TABLE programs
+      ADD COLUMN category TEXT
+    `)
+  }
+}
+
 // ==================== Helpers ====================
 
 /**
@@ -232,16 +289,17 @@ export function getProgram(id: number): any {
   return db.prepare('SELECT * FROM programs WHERE id = ?').get(id)
 }
 
-export function addProgram(data: { name: string; process_name: string; icon_path?: string | null; card_image_path?: string | null }): any {
+export function addProgram(data: { name: string; process_name: string; icon_path?: string | null; card_image_path?: string | null; category?: string | null }): any {
   const stmt = db.prepare(`
-    INSERT INTO programs (name, process_name, icon_path, card_image_path)
-    VALUES (@name, @process_name, @icon_path, @card_image_path)
+    INSERT INTO programs (name, process_name, icon_path, card_image_path, category)
+    VALUES (@name, @process_name, @icon_path, @card_image_path, @category)
   `)
   const result = stmt.run({
     name: data.name,
     process_name: data.process_name,
     icon_path: data.icon_path ?? null,
-    card_image_path: data.card_image_path ?? null
+    card_image_path: data.card_image_path ?? null,
+    category: data.category ?? null
   })
   return db.prepare('SELECT * FROM programs WHERE id = ?').get(result.lastInsertRowid)
 }
@@ -419,6 +477,73 @@ export function getTotalUsageForDate(date: string): number {
   return result?.total ?? 0
 }
 
+/**
+ * Returns a 24-element array (index 0..23 = local hour) of seconds used by a
+ * program on the given local date. Sessions are split at hour boundaries so
+ * the bars show when during the day the program was used.
+ */
+export function getProgramHourlyUsage(programId: number, date: string): number[] {
+  const buckets: number[] = new Array(24).fill(0)
+  const rows: any[] = db
+    .prepare(
+      'SELECT start_time, end_time, duration_seconds FROM usage_sessions WHERE program_id = ? AND date = ?'
+    )
+    .all(programId, date)
+
+  const dayStart = new Date(`${date}T00:00:00`).getTime()
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000
+
+  for (const row of rows) {
+    const start = new Date(row.start_time).getTime()
+    if (!Number.isFinite(start)) continue
+
+    // An active session has no end_time; duration_seconds is refreshed every
+    // ~10s by the tracker, so it is safer than "now" (which would over-count
+    // a session left behind by a crash).
+    const end = row.end_time
+      ? new Date(row.end_time).getTime()
+      : start + (row.duration_seconds || 0) * 1000
+    if (!Number.isFinite(end)) continue
+
+    let cursor = Math.max(start, dayStart)
+    const limit = Math.min(end, dayEnd)
+
+    while (cursor < limit) {
+      const hour = Math.floor((cursor - dayStart) / (60 * 60 * 1000))
+      if (hour < 0 || hour > 23) break
+      const boundary = dayStart + (hour + 1) * 60 * 60 * 1000
+      const segmentEnd = Math.min(limit, boundary)
+      buckets[hour] += (segmentEnd - cursor) / 1000
+      cursor = segmentEnd
+    }
+  }
+
+  return buckets.map((seconds) => Math.round(seconds))
+}
+
+/**
+ * Sums each program's usage between two local dates (inclusive) and returns
+ * the program's category so the UI can build a category breakdown.
+ */
+export function getProgramUsageRange(startDate: string, endDate: string): any[] {
+  return db
+    .prepare(
+      `
+      SELECT
+        p.id AS program_id,
+        p.name AS program_name,
+        p.category,
+        COALESCE(SUM(du.total_seconds), 0) AS total_seconds
+      FROM programs p
+      LEFT JOIN daily_usage du
+        ON du.program_id = p.id AND du.date BETWEEN ? AND ?
+      GROUP BY p.id
+      ORDER BY total_seconds DESC
+    `
+    )
+    .all(startDate, endDate)
+}
+
 // ==================== Goals ====================
 
 /** Returns the list of program ids associated with a goal. */
@@ -593,6 +718,74 @@ export function updateUserProfile(data: Partial<any>): any {
   return db.prepare('SELECT * FROM user_profile WHERE id = 1').get()
 }
 
+// ==================== Todos ====================
+
+/** Pending todos first (newest first), completed ones last. */
+export function getTodos(): any[] {
+  return db
+    .prepare('SELECT * FROM todos ORDER BY is_done ASC, created_at DESC, id DESC')
+    .all()
+}
+
+export function getTodo(id: number): any {
+  return db.prepare('SELECT * FROM todos WHERE id = ?').get(id)
+}
+
+export function addTodo(title: string): any {
+  const result = db.prepare('INSERT INTO todos (title) VALUES (?)').run(title)
+  return db.prepare('SELECT * FROM todos WHERE id = ?').get(result.lastInsertRowid)
+}
+
+export function updateTodo(id: number, data: { title?: string; is_done?: number }): any {
+  const fields: string[] = []
+  const values: any[] = []
+
+  if (data.title !== undefined) {
+    fields.push('title = ?')
+    values.push(data.title)
+  }
+  if (data.is_done !== undefined) {
+    fields.push('is_done = ?')
+    values.push(data.is_done ? 1 : 0)
+  }
+
+  if (fields.length > 0) {
+    values.push(id)
+    db.prepare(`UPDATE todos SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+  }
+  return db.prepare('SELECT * FROM todos WHERE id = ?').get(id)
+}
+
+export function deleteTodo(id: number): void {
+  db.prepare('DELETE FROM todos WHERE id = ?').run(id)
+}
+
+export function clearCompletedTodos(): void {
+  db.prepare('DELETE FROM todos WHERE is_done = 1').run()
+}
+
+// ==================== Reminders ====================
+
+export function getReminders(): any[] {
+  return db.prepare('SELECT * FROM reminders ORDER BY remind_at ASC').all()
+}
+
+export function getReminder(id: number): any {
+  return db.prepare('SELECT * FROM reminders WHERE id = ?').get(id)
+}
+
+/** `remindAt` is an epoch-milliseconds timestamp. */
+export function addReminder(title: string, remindAt: number): any {
+  const result = db
+    .prepare('INSERT INTO reminders (title, remind_at) VALUES (?, ?)')
+    .run(title, remindAt)
+  return db.prepare('SELECT * FROM reminders WHERE id = ?').get(result.lastInsertRowid)
+}
+
+export function deleteReminder(id: number): void {
+  db.prepare('DELETE FROM reminders WHERE id = ?').run(id)
+}
+
 // ==================== Data Management ====================
 
 export function clearAllTrackingData(): void {
@@ -664,7 +857,9 @@ const BACKUP_INSERT_ORDER = [
   'usage_sessions',
   'daily_usage',
   'goal_completions',
-  'pomodoro_sessions'
+  'pomodoro_sessions',
+  'todos',
+  'reminders'
 ]
 
 /** Dumps every table's rows as an object keyed by table name. */

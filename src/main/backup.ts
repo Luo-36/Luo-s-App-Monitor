@@ -10,7 +10,9 @@ const IMAGE_FIELDS: Array<{ table: string; field: string }> = [
   { table: 'programs', field: 'card_image_path' },
   { table: 'goals', field: 'card_image_path' },
   { table: 'user_profile', field: 'avatar_path' },
-  { table: 'user_profile', field: 'background_image_path' }
+  { table: 'user_profile', field: 'background_image_path' },
+  { table: 'user_profile', field: 'pomodoro_floating_ball_image' },
+  { table: 'user_profile', field: 'todo_floating_ball_image' }
 ]
 
 function rowsAsArray(rows: any): any[] {

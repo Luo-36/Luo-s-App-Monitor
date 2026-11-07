@@ -151,9 +151,16 @@ export const ProgramCard: React.FC<ProgramCardProps> = React.memo(
                 </span>
               </div>
             )}
-            <span className="text-sm font-medium text-white drop-shadow-sm">
-              {program.name}
-            </span>
+            <div className="min-w-0">
+              <span className="block text-sm font-medium text-white drop-shadow-sm truncate">
+                {program.name}
+              </span>
+              {program.category && (
+                <span className="block text-[10px] text-white/60 truncate">
+                  {program.category}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Usage time — shown on hover */}

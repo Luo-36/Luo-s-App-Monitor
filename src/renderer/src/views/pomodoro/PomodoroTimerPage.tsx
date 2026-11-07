@@ -5,10 +5,13 @@ import {
   Square,
   Settings2,
   Disc3,
-  History
+  History,
+  ImagePlus,
+  Trash2
 } from 'lucide-react'
 import type { PomodoroConfig } from '@/types'
 import { api } from '@/api/bridge'
+import { toFileUrl } from '@/utils/fileUrl'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
@@ -50,6 +53,8 @@ export const PomodoroTimerPage: React.FC = () => {
   const [activePreset, setActivePreset] = useState<PresetKey>('default')
   const [customConfig, setCustomConfig] = useState<PomodoroConfig>(presets.default.config)
   const [showCustom, setShowCustom] = useState(false)
+  const [ballImage, setBallImage] = useState<string | null>(null)
+  const [uploadingBallImage, setUploadingBallImage] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -79,6 +84,7 @@ export const PomodoroTimerPage: React.FC = () => {
           cycles: profile.pomodoro_cycles || 4
         }
         setCustomConfig(customCfg)
+        setBallImage(profile.pomodoro_floating_ball_image ?? null)
       } catch (err) {
         console.error('Failed to load pomodoro state:', err)
       } finally {
@@ -158,6 +164,42 @@ export const PomodoroTimerPage: React.FC = () => {
       console.error('Failed to toggle floating ball:', err)
     }
   }, [])
+
+  const handleUploadBallImage = async () => {
+    setUploadingBallImage(true)
+    try {
+      const filePath = await api.openFileDialog([
+        { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }
+      ])
+      if (!filePath) return
+
+      const dataUrl = await api.readFileAsBase64(filePath)
+      if (!dataUrl) return
+
+      const extMatch = /\.([a-zA-Z0-9]+)$/.exec(filePath)
+      const ext = extMatch ? extMatch[1].toLowerCase() : 'png'
+      const savedPath = await api.saveImage(
+        dataUrl,
+        'floating',
+        `pomo_ball_${Date.now()}.${ext}`
+      )
+      await api.updateProfile({ pomodoro_floating_ball_image: savedPath })
+      setBallImage(savedPath)
+    } catch (err) {
+      console.error('Failed to upload floating ball image:', err)
+    } finally {
+      setUploadingBallImage(false)
+    }
+  }
+
+  const handleClearBallImage = async () => {
+    try {
+      await api.updateProfile({ pomodoro_floating_ball_image: null })
+      setBallImage(null)
+    } catch (err) {
+      console.error('Failed to clear floating ball image:', err)
+    }
+  }
 
   if (loading) {
     return (
@@ -302,6 +344,43 @@ export const PomodoroTimerPage: React.FC = () => {
           {pomodoro.floatingBallEnabled && (
             <p className="text-xs text-text-secondary/60">番茄钟运行时，悬浮球将显示在桌面最顶层</p>
           )}
+
+          <div className="pt-4 border-t border-white/5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-white">悬浮球背景</p>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  支持透明 PNG；未设置时使用悬浮球颜色
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {ballImage && (
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0">
+                    <img
+                      src={toFileUrl(ballImage) || ''}
+                      alt="悬浮球背景"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                {ballImage && (
+                  <Button variant="ghost" size="sm" onClick={handleClearBallImage}>
+                    <Trash2 className="w-4 h-4" />
+                    清除
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleUploadBallImage}
+                  loading={uploadingBallImage}
+                >
+                  <ImagePlus className="w-4 h-4" />
+                  上传
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
 

@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, screen } from 'electron'
+import { readImageAsDataUrl } from './image-helper'
 
 export interface PomodoroState {
   status: 'idle' | 'running' | 'paused'
@@ -27,6 +28,7 @@ export class FloatingBallWindow {
   private enabled: boolean = false
   private lastState: PomodoroState | null = null
   private ballColor: string = '#B8B0A0' // Default taupe
+  private ballImageDataUrl: string | null = null
 
   constructor() {
     this.registerIpcHandlers()
@@ -53,6 +55,23 @@ export class FloatingBallWindow {
     }
   }
 
+  /**
+   * Sets a custom background image for the ball (null clears it and falls back
+   * to the theme color). Transparent PNGs are supported.
+   */
+  setBallImage(imagePath: string | null | undefined): void {
+    this.ballImageDataUrl = readImageAsDataUrl(imagePath)
+    this.sendAppearance()
+  }
+
+  private sendAppearance(): void {
+    if (!this.window || this.window.isDestroyed()) return
+    try {
+      this.window.webContents.send('fb:color', this.ballColor)
+      this.window.webContents.send('fb:image', this.ballImageDataUrl)
+    } catch { /* window may be closing */ }
+  }
+
   handleTick(state: PomodoroState): void {
     this.lastState = state
     // Show ball whenever enabled, regardless of pomodoro state
@@ -69,8 +88,8 @@ export class FloatingBallWindow {
     if (this.window && !this.window.isDestroyed()) {
       // showInactive shows the window without stealing focus
       this.window.showInactive()
-      // Send color and state on re-show (window may have lost content)
-      this.window.webContents.send('fb:color', this.ballColor)
+      // Send appearance and state on re-show (window may have lost content)
+      this.sendAppearance()
       if (this.lastState) this.sendTick(this.lastState)
       return
     }
@@ -78,7 +97,7 @@ export class FloatingBallWindow {
     if (this.window && !this.window.isDestroyed()) {
       this.window.once('ready-to-show', () => {
         this.window?.show()
-        this.window?.webContents.send('fb:color', this.ballColor)
+        this.sendAppearance()
         if (this.lastState) this.sendTick(this.lastState)
       })
     }
@@ -110,16 +129,24 @@ export class FloatingBallWindow {
   create(): void {
     if (this.window && !this.window.isDestroyed()) return
     this.window = new BrowserWindow({
-      width: 90, height: 90,
+      // Extra height (and a little width) leaves room for the hover tooltip,
+      // which used to be clipped by a 90×90 window.
+      width: 100, height: 112,
       frame: false, transparent: true, alwaysOnTop: true,
       resizable: false, skipTaskbar: true, hasShadow: false,
       show: false,
       webPreferences: { nodeIntegration: true, contextIsolation: false, sandbox: false }
     })
     this.window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(this.getHtml())}`)
+    // Re-send appearance after (re)load so a custom background survives the
+    // window being created before the page is ready.
+    this.window.webContents.on('did-finish-load', () => {
+      this.sendAppearance()
+      if (this.lastState) this.sendTick(this.lastState)
+    })
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width, height } = primaryDisplay.workAreaSize
-    this.window.setPosition(width - 100, height - 100)
+    this.window.setPosition(width - 110, height - 120)
   }
 
   private registerIpcHandlers(): void {
@@ -146,12 +173,14 @@ export class FloatingBallWindow {
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
-body{display:flex;align-items:center;justify-content:center;}
+body{display:flex;align-items:flex-start;justify-content:center;padding-top:4px;}
+#stack{display:flex;flex-direction:column;align-items:center;gap:4px;}
 #ball{
   width:72px;height:72px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
-  cursor:grab;position:relative;
+  cursor:grab;position:relative;flex-shrink:0;
   transition:transform 0.1s;
+  background-size:cover;background-position:center;background-repeat:no-repeat;
 }
 #ball:active{cursor:grabbing;transform:scale(1.1);}
 #time{
@@ -160,15 +189,15 @@ body{display:flex;align-items:center;justify-content:center;}
   pointer-events:none;
 }
 #tooltip{
-  position:absolute;bottom:-30px;left:50%;transform:translateX(-50%);
-  background:rgba(0,0,0,0.8);color:#fff;font-size:11px;padding:3px 8px;
-  border-radius:6px;white-space:nowrap;opacity:0;transition:opacity 0.15s;
-  pointer-events:none;
+  max-width:92px;overflow:hidden;text-overflow:ellipsis;
+  background:rgba(0,0,0,0.8);color:#fff;font-size:11px;line-height:1.4;
+  padding:3px 8px;border-radius:6px;white-space:nowrap;
+  opacity:0;transition:opacity 0.15s;pointer-events:none;
 }
-#ball:hover #tooltip{opacity:1;}
+#ball:hover ~ #tooltip{opacity:1;}
 </style></head><body>
-<div id="ball">
-  <span id="time">25:00</span>
+<div id="stack">
+  <div id="ball"><span id="time">25:00</span></div>
   <div id="tooltip">工作中 · 25:00</div>
 </div>
 <script>
@@ -177,8 +206,21 @@ var timeEl=document.getElementById('time');
 var tooltipEl=document.getElementById('tooltip');
 var ballEl=document.getElementById('ball');
 var phaseLabels={work:'工作中',break:'休息中',long_break:'长休息'};
+var baseColor='#B8B0A0';
+var ballImage=null;
+function applyAppearance(){
+  if(ballImage){
+    ballEl.style.backgroundImage='url('+ballImage+')';
+    ballEl.style.backgroundColor='transparent';
+  }else{
+    ballEl.style.backgroundImage='none';
+    ballEl.style.backgroundColor=baseColor;
+  }
+}
 // Receive theme color
-ipc.on('fb:color',function(e,c){ballEl.style.backgroundColor=c;});
+ipc.on('fb:color',function(e,c){baseColor=c;applyAppearance();});
+// Receive custom background image (supports transparent PNG)
+ipc.on('fb:image',function(e,dataUrl){ballImage=dataUrl||null;applyAppearance();});
 // Receive timer state
 ipc.on('fb:tick',function(e,s){
   var m=Math.floor(s.remainingSeconds/60);
@@ -186,7 +228,7 @@ ipc.on('fb:tick',function(e,s){
   var t=String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
   timeEl.textContent=t;
   tooltipEl.textContent=(phaseLabels[s.phase]||'工作中')+' · '+t;
-  if(s.color) ballEl.style.backgroundColor=s.color;
+  if(s.color){baseColor=s.color;applyAppearance();}
 });
 // Dragging
 var drag=false;

@@ -6,7 +6,8 @@ import {
   startSession,
   endSession,
   updateSessionDuration,
-  getTodayUsage
+  getTodayUsage,
+  localDate
 } from './database'
 
 interface ProcessCacheEntry {
@@ -18,6 +19,8 @@ interface TrackingState {
   programId: number | null
   sessionId: number | null
   startTime: Date | null
+  /** Local date (YYYY-MM-DD) the current session belongs to. */
+  sessionDate: string | null
   tickCount: number
 }
 
@@ -31,6 +34,7 @@ export class UsageTracker {
     programId: null,
     sessionId: null,
     startTime: null,
+    sessionDate: null,
     tickCount: 0
   }
   private isRunning: boolean = false
@@ -84,6 +88,7 @@ export class UsageTracker {
 
     this.periodicFlushTimer = setInterval(() => {
       if (this.state.sessionId !== null && this.state.programId !== null && this.state.startTime) {
+        this.rolloverSessionIfNeeded()
         this.flushSessionKeepAlive()
       }
     }, 10000)
@@ -118,6 +123,7 @@ export class UsageTracker {
       programId: null,
       sessionId: null,
       startTime: null,
+      sessionDate: null,
       tickCount: 0
     }
     this.lastDetectedProcess = ''
@@ -210,6 +216,7 @@ export class UsageTracker {
       this.state.programId = cached.programId
       this.state.sessionId = session.id as number
       this.state.startTime = new Date()
+      this.state.sessionDate = session.date as string
     }
 
     if (this.state.tickCount % 3 === 0) {
@@ -233,6 +240,39 @@ export class UsageTracker {
       } catch (err) {
         console.error('[UsageTracker] Failed to flush session:', err)
       }
+    }
+  }
+
+  /**
+   * Splits an in-flight session when the clock crosses midnight.
+   *
+   * `endSession` attributes the whole session to the date it started on, so a
+   * session left running overnight would count all of today's usage toward
+   * yesterday. Closing it at the day boundary keeps daily usage accurate and
+   * lets the end-of-day goal check evaluate yesterday with final numbers.
+   */
+  private rolloverSessionIfNeeded(): void {
+    if (
+      this.state.sessionId === null ||
+      this.state.programId === null ||
+      !this.state.startTime ||
+      !this.state.sessionDate
+    ) {
+      return
+    }
+
+    const today = localDate()
+    if (this.state.sessionDate === today) return
+
+    try {
+      endSession(this.state.sessionId)
+
+      const session = startSession(this.state.programId)
+      this.state.sessionId = session.id as number
+      this.state.startTime = new Date()
+      this.state.sessionDate = session.date as string
+    } catch (err) {
+      console.error('[UsageTracker] Failed to roll over session at midnight:', err)
     }
   }
 

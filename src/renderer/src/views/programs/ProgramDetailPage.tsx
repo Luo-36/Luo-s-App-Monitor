@@ -1,14 +1,25 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Clock, BarChart3, Calendar } from 'lucide-react'
 import type { Program, DailyUsage } from '@/types'
 import { api } from '@/api/bridge'
+import { toFileUrl } from '@/utils/fileUrl'
 import LineChart from '@/components/charts/LineChart'
+import HourlyBarChart from '@/components/charts/HourlyBarChart'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
+import Select from '@/components/ui/Select'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 type RangeTab = '7d' | '30d'
+
+/** Local date as YYYY-MM-DD (mirrors the main process's localDate). */
+function localDateStr(d: Date = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 export const ProgramDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -17,6 +28,22 @@ export const ProgramDetailPage: React.FC = () => {
   const [usageData, setUsageData] = useState<DailyUsage[]>([])
   const [range, setRange] = useState<RangeTab>('7d')
   const [todaySeconds, setTodaySeconds] = useState(0)
+  const [hourly, setHourly] = useState<number[]>(() => new Array(24).fill(0))
+
+  const hourlyDateOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      options.push({
+        value: localDateStr(d),
+        label: i === 0 ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`
+      })
+    }
+    return options
+  }, [])
+  const [hourlyDate, setHourlyDate] = useState(() => localDateStr())
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -43,6 +70,23 @@ export const ProgramDetailPage: React.FC = () => {
     }
     load()
   }, [id, range])
+
+  // Hourly distribution for the selected day
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    api
+      .getProgramHourlyUsage(Number(id), hourlyDate)
+      .then((buckets) => {
+        if (!cancelled) setHourly(buckets)
+      })
+      .catch((err) => {
+        console.error('Failed to load hourly usage:', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [id, hourlyDate])
 
   const formatDuration = (seconds: number): string => {
     const h = Math.floor(seconds / 3600)
@@ -83,7 +127,7 @@ export const ProgramDetailPage: React.FC = () => {
       <div className="flex items-center gap-4 mb-6">
         {program.icon_path && (
           <img
-            src={`file://${program.icon_path}`}
+            src={toFileUrl(program.icon_path) || ''}
             alt={program.name}
             className="w-14 h-14 rounded-2xl bg-white/10"
           />
@@ -98,6 +142,11 @@ export const ProgramDetailPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-white">{program.name}</h1>
           <p className="text-sm text-text-secondary">{program.process_name}</p>
+          {program.category && (
+            <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-primary/15 text-primary text-xs">
+              {program.category}
+            </span>
+          )}
         </div>
       </div>
 
@@ -124,6 +173,25 @@ export const ProgramDetailPage: React.FC = () => {
       {/* Line Chart */}
       <Card className="p-4 mb-6">
         <LineChart data={usageData} />
+      </Card>
+
+      {/* Hourly distribution */}
+      <Card className="p-4 mb-6">
+        <div className="flex items-end justify-between gap-4 mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-white">时段分布</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              0 时 ~ 24 时每小时的使用时长
+            </p>
+          </div>
+          <Select
+            value={hourlyDate}
+            onChange={setHourlyDate}
+            options={hourlyDateOptions}
+            className="w-32 shrink-0"
+          />
+        </div>
+        <HourlyBarChart data={hourly} />
       </Card>
 
       {/* Stats Bar */}

@@ -18,14 +18,7 @@ export const ProgramListPage: React.FC = () => {
   const [autoAddProcess, setAutoAddProcess] = useState<string | null>(null)
   const [capturing, setCapturing] = useState(false)
   const [capturedProcess, setCapturedProcess] = useState<string | null>(null)
-  const { todayUsage, updateFromTick, currentProgram, detectedProcess } = useTrackingStore()
-
-  const formatDuration = (seconds: number): string => {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    if (m > 0) return `${m}m${s}s`
-    return `${s}s`
-  }
+  const { todayUsage, updateFromTick, currentProgram } = useTrackingStore()
 
   const loadPrograms = async () => {
     try {
@@ -136,32 +129,6 @@ export const ProgramListPage: React.FC = () => {
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
-      {/* Debug Bar: shows currently detected foreground window */}
-      <div className="mb-4 px-3 py-1.5 bg-black/20 rounded-lg border border-white/5 flex items-center gap-3 text-xs">
-        <span className="text-text-secondary/60 whitespace-nowrap">当前检测:</span>
-        <span className="font-mono text-white/80">
-          {currentProgram ? (
-            <>
-              {currentProgram.processName}
-              <span className="text-green-400 ml-1.5">已追踪</span>
-              <span className="text-text-secondary/50 ml-1">
-                ({formatDuration(currentProgram.elapsedSeconds)})
-              </span>
-            </>
-          ) : detectedProcess ? (
-            <>
-              {detectedProcess}
-              <span className="text-yellow-400 ml-1.5">未追踪</span>
-            </>
-          ) : (
-            <span className="text-text-secondary/40">无活动窗口</span>
-          )}
-        </span>
-        <span className="ml-auto text-text-secondary/40">
-          {currentProgram ? '追踪中' : '待机'}
-        </span>
-      </div>
-
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">我的程序</h1>

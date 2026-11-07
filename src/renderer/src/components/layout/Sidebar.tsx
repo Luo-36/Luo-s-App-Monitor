@@ -4,6 +4,7 @@ import {
   Grid3X3,
   BarChart3,
   Target,
+  ListTodo,
   Timer,
   User,
   Settings,
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/programs', icon: Grid3X3, label: '程序' },
   { to: '/statistics', icon: BarChart3, label: '统计' },
   { to: '/goals', icon: Target, label: '目标' },
+  { to: '/todos', icon: ListTodo, label: '待办' },
   { to: '/pomodoro', icon: Timer, label: '番茄钟' },
   { to: '/profile', icon: User, label: '用户' },
   { to: '/settings', icon: Settings, label: '设置' }

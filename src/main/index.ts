@@ -6,15 +6,64 @@ import { UsageTracker } from './tracker'
 import { PomodoroEngine } from './pomodoro-engine'
 import { registerIpcHandlers } from './ipc-handlers'
 import { FloatingBallWindow } from './floating-ball-window'
+import { TodoFloatingWindow } from './todo-floating-window'
 import { setupTray, destroyTray, updateTrayMenu } from './tray'
 import { setAutoStart } from './auto-launch'
 import { checkGoalCompletion } from './ipc-handlers'
+import { initReminderScheduler } from './reminder-scheduler'
+
+// Windows toast notifications need an explicit AppUserModelID. The packaged
+// build must use the same id as the installer shortcut (electron-builder appId);
+// in development the executable path is what Windows can map to.
+if (process.platform === 'win32') {
+  app.setAppUserModelId(app.isPackaged ? 'com.luo.app' : process.execPath)
+}
 
 let mainWindow: BrowserWindow | null = null
 let tracker: UsageTracker | null = null
 let pomodoro: PomodoroEngine | null = null
 let floatingBall: FloatingBallWindow | null = null
+let todoFloating: TodoFloatingWindow | null = null
 let isQuitting = false
+
+/**
+ * Last date for which the end-of-day goal check has run. Initialized to
+ * yesterday so a fresh start also evaluates the day that just ended.
+ */
+let lastGoalCheckDate = localDate(new Date(Date.now() - 24 * 60 * 60 * 1000))
+
+/**
+ * Runs the end-of-day goal check for every fully elapsed day since the last
+ * observed date. This is what lets restriction goals award a heart: they can
+ * only be judged once the day is over and the user has stayed under the limit.
+ */
+function runElapsedDayChecks(): void {
+  const today = localDate()
+  if (today === lastGoalCheckDate) return
+
+  // Wait a couple of minutes after midnight so the tracker has already ended
+  // yesterday's in-flight session and written its usage to the database.
+  const now = new Date()
+  if (now.getHours() === 0 && now.getMinutes() < 2) return
+
+  const cursor = new Date(`${lastGoalCheckDate}T00:00:00`)
+  const end = new Date(`${today}T00:00:00`)
+  let guard = 0
+
+  // Cap the catch-up so a long shutdown doesn't rain a backlog of hearts.
+  while (cursor < end && guard < 7) {
+    const date = localDate(cursor)
+    try {
+      checkGoalCompletion(date)
+    } catch (err) {
+      console.error(`Failed to check goals for ${date}:`, err)
+    }
+    cursor.setDate(cursor.getDate() + 1)
+    guard++
+  }
+
+  lastGoalCheckDate = today
+}
 
 // Single instance lock
 const gotTheLock = app.requestSingleInstanceLock()
@@ -124,6 +173,9 @@ function setup(): void {
     } else if (profile && profile.theme_color) {
       floatingBall.setThemeColor(profile.theme_color)
     }
+    if (profile) {
+      floatingBall.setBallImage(profile.pomodoro_floating_ball_image)
+    }
   } catch (err) {
     console.error('Failed to sync floating ball state from profile:', err)
   }
@@ -131,8 +183,40 @@ function setup(): void {
     floatingBall?.handleTick(state)
   })
 
-  // 9. Register IPC handlers (pass floatingBall for toggle support)
-  registerIpcHandlers(mainWindow, tracker, pomodoro, floatingBall)
+  // 9. Create the todo floating window instance (shown only if enabled).
+  //    Register IPC handlers first so the window's page can query todos.
+  todoFloating = new TodoFloatingWindow()
+  registerIpcHandlers(mainWindow, tracker, pomodoro, floatingBall, todoFloating)
+
+  // 9b. Restore the todo floating window + scheduled reminders
+  try {
+    const profile = getUserProfile()
+    if (profile) {
+      todoFloating.setBallImage(profile.todo_floating_ball_image)
+      if (profile.todo_floating_enabled) {
+        todoFloating.setEnabled(true, profile.theme_color)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to restore todo floating window state:', err)
+  }
+
+  initReminderScheduler(
+    () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('reminders:changed')
+      }
+    },
+    (title) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      // In-app fallback so the reminder is visible even when the OS
+      // notification is suppressed by Windows notification settings.
+      mainWindow.webContents.send('reminder:fired', title)
+      if (!mainWindow.isFocused()) {
+        mainWindow.flashFrame(true)
+      }
+    }
+  )
 
   // 10. Setup tray
   setupTray(mainWindow)
@@ -149,10 +233,16 @@ function setup(): void {
     console.error('Failed to sync auto-start setting:', err)
   }
 
-  // 12. Periodic fallback goal check (every 60s as backup)
+  // 12. End-of-day goal check: evaluate the day that just ended so
+  //     restriction goals can award a heart after staying under the limit.
+  runElapsedDayChecks()
+
+  // 13. Periodic fallback goal check (every 60s as backup)
   //     Primary check happens on every tracking tick (~3s)
   setInterval(() => {
     try {
+      // Detect a calendar-day change and settle the day that has ended.
+      runElapsedDayChecks()
       checkGoalCompletion(localDate())
     } catch (err) {
       console.error('Failed to check goal completions:', err)
@@ -183,6 +273,11 @@ app.on('before-quit', () => {
   if (floatingBall) {
     floatingBall.destroy()
     floatingBall = null
+  }
+
+  if (todoFloating) {
+    todoFloating.destroy()
+    todoFloating = null
   }
 
   destroyTray()

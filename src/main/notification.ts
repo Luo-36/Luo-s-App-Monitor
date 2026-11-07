@@ -3,23 +3,50 @@ import { Notification } from 'electron'
 const scheduledReminders: NodeJS.Timeout[] = []
 
 /**
+ * Keep references to visible notifications until they close. On some
+ * platforms a Notification that is garbage-collected right after show()
+ * can be silently dropped before the OS displays it.
+ */
+const activeNotifications = new Set<Notification>()
+
+/**
  * Sends a system notification to the user.
  * @param title Notification title
  * @param body Notification body text
  * @param onClick Optional callback when the notification is clicked
  */
 export function sendNotification(title: string, body: string, onClick?: () => void): void {
-  const notification = new Notification({
-    title,
-    body,
-    silent: false
-  })
-
-  if (onClick) {
-    notification.on('click', onClick)
+  if (!Notification.isSupported()) {
+    console.warn('[notification] System notifications are not supported on this platform')
+    return
   }
 
-  notification.show()
+  try {
+    const notification = new Notification({
+      title,
+      body,
+      silent: false
+    })
+
+    activeNotifications.add(notification)
+
+    const cleanup = (): void => {
+      activeNotifications.delete(notification)
+    }
+    notification.on('close', cleanup)
+    notification.on('failed', cleanup)
+
+    if (onClick) {
+      notification.on('click', onClick)
+    }
+
+    notification.show()
+
+    // Safety net: never keep a reference forever.
+    setTimeout(cleanup, 60000)
+  } catch (err) {
+    console.error('[notification] Failed to show notification:', err)
+  }
 }
 
 /**

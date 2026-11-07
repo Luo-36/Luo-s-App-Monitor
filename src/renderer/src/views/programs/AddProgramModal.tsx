@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button'
 import ImageCropper from '@/components/image/ImageCropper'
 import { api } from '@/api/bridge'
 import { toFileUrl } from '@/utils/fileUrl'
+import { cropImageToDataUrl } from '@/utils/cropImage'
 import type { CropData } from '@/types'
 
 interface AddProgramModalProps {
@@ -18,6 +19,7 @@ interface AddProgramModalProps {
     process_name: string
     icon_path: string | null
     card_image_path: string | null
+    category: string | null
   }
   /** Pre-fill the process name when adding a new program (auto-capture flow). */
   initialProcessName?: string
@@ -32,6 +34,7 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
 }) => {
   const [name, setName] = useState(editProgram?.name ?? '')
   const [processName, setProcessName] = useState(editProgram?.process_name ?? '')
+  const [category, setCategory] = useState(editProgram?.category ?? '')
   const [iconSrc, setIconSrc] = useState<string | null>(editProgram?.icon_path ?? null)
   const [cardSrc, setCardSrc] = useState<string | null>(editProgram?.card_image_path ?? null)
   const [cropping, setCropping] = useState<'icon' | 'card' | null>(null)
@@ -45,6 +48,7 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
   useEffect(() => {
     setName(editProgram?.name ?? '')
     setProcessName(editProgram?.process_name ?? initialProcessName ?? '')
+    setCategory(editProgram?.category ?? '')
     setIconSrc(editProgram?.icon_path ?? null)
     setCardSrc(editProgram?.card_image_path ?? null)
     setError('')
@@ -88,14 +92,17 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
     fileInputRef.current?.click()
   }
 
-  const handleCropComplete = async (_cropData: CropData) => {
+  const handleCropComplete = async (cropData: CropData) => {
     try {
-      // cropImageSrc is always a data URL from the FileReader (no file:// conversion needed)
+      // Actually crop the selected region before saving — saving cropImageSrc
+      // directly would store the untouched original image.
+      const cropped = await cropImageToDataUrl(cropImageSrc, cropData)
+
       if (cropping === 'icon') {
-        const path = await api.saveImage(cropImageSrc, 'icons', `icon_${Date.now()}.png`)
+        const path = await api.saveImage(cropped, 'icons', `icon_${Date.now()}.png`)
         setIconSrc(path)
       } else if (cropping === 'card') {
-        const path = await api.saveImage(cropImageSrc, 'cards', `card_${Date.now()}.png`)
+        const path = await api.saveImage(cropped, 'cards', `card_${Date.now()}.png`)
         setCardSrc(path)
       }
     } catch (err) {
@@ -121,6 +128,7 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
         await api.updateProgram(editProgram.id, {
           name: name.trim(),
           process_name: processName.trim(),
+          category: category.trim() || null,
           icon_path: iconSrc,
           card_image_path: cardSrc
         })
@@ -128,6 +136,7 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
         await api.addProgram({
           name: name.trim(),
           process_name: processName.trim(),
+          category: category.trim() || null,
           icon_path: iconSrc,
           card_image_path: cardSrc
         })
@@ -181,6 +190,13 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
               </Button>
             </div>
           </div>
+
+          <Input
+            label="类别（可选）"
+            value={category}
+            onChange={setCategory}
+            placeholder="例如: 工作 / 学习 / 游戏"
+          />
 
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-text-secondary">
@@ -247,6 +263,9 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
             }
             reader.readAsDataURL(file)
           }
+          // Reset the input so picking another file with the same name fires
+          // change again (input.value is only "C:\fakepath\<name>").
+          e.target.value = ''
         }}
       />
 

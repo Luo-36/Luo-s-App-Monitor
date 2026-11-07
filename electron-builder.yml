@@ -32,6 +32,8 @@ win:
       to: resources/
 
 nsis:
+  # 使用向导式安装器，允许用户在安装时选择安装目录
+  # （allowToChangeInstallationDirectory 仅在 oneClick: false 时生效）
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

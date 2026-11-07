@@ -218,7 +218,6 @@ export const SettingsPage: React.FC = () => {
     const dataUrl = await api.readFileAsBase64(filePath)
     if (!dataUrl) return
     const savedPath = await api.saveImage(dataUrl, 'background', `bg_${Date.now()}.png`)
-    console.log('[Settings] Saved original:', savedPath)
 
     setPendingCropPath(savedPath)
     setCropImageSrc(dataUrl)
@@ -230,8 +229,6 @@ export const SettingsPage: React.FC = () => {
       const srcPath = pendingCropPath
       if (!srcPath) { console.error('[Settings] No pending crop path'); return }
 
-      console.log('[Settings] Cropping via main process:', srcPath, cropData)
-
       const outName = `bg_cropped_${Date.now()}`
       const result = await api.cropImage(
         srcPath, outName,
@@ -240,7 +237,6 @@ export const SettingsPage: React.FC = () => {
       )
 
       if (result) {
-        console.log('[Settings] Crop result:', result)
         setLocalBackgroundImage(result)
       } else {
         console.error('[Settings] Crop returned null')

@@ -24,6 +24,7 @@ const ProgramDetailPage = lazy(() => import('@/views/programs/ProgramDetailPage'
 const StatisticsPage = lazy(() => import('@/views/statistics/StatisticsPage'))
 const GoalListPage = lazy(() => import('@/views/goals/GoalListPage'))
 const GoalDetailPage = lazy(() => import('@/views/goals/GoalDetailPage'))
+const TodoPage = lazy(() => import('@/views/todo/TodoPage'))
 const ProfilePage = lazy(() => import('@/views/profile/ProfilePage'))
 const PomodoroTimerPage = lazy(() => import('@/views/pomodoro/PomodoroTimerPage'))
 const SettingsPage = lazy(() => import('@/views/settings/SettingsPage'))
@@ -74,6 +75,14 @@ export const router = createHashRouter([
         element: (
           <SuspenseWrapper>
             <GoalDetailPage />
+          </SuspenseWrapper>
+        )
+      },
+      {
+        path: 'todos',
+        element: (
+          <SuspenseWrapper>
+            <TodoPage />
           </SuspenseWrapper>
         )
       },

@@ -5,6 +5,7 @@ import { execFile } from 'child_process'
 import { UsageTracker } from './tracker'
 import { PomodoroEngine } from './pomodoro-engine'
 import { FloatingBallWindow } from './floating-ball-window'
+import { TodoFloatingWindow } from './todo-floating-window'
 import {
   getPrograms,
   getProgram,
@@ -14,6 +15,8 @@ import {
   getTodayUsage,
   getTotalUsage,
   getProgramUsage,
+  getProgramHourlyUsage,
+  getProgramUsageRange,
   getGoals,
   getGoal,
   addGoal,
@@ -26,6 +29,16 @@ import {
   getProgramUsageForDate,
   getTotalUsageForDate,
   clearAllTrackingData,
+  getTodos,
+  getTodo,
+  addTodo,
+  updateTodo,
+  deleteTodo,
+  clearCompletedTodos,
+  getReminders,
+  getReminder,
+  addReminder,
+  deleteReminder,
   localDate
 } from './database'
 import { setAutoStart, isAutoStartEnabled } from './auto-launch'
@@ -33,6 +46,7 @@ import { saveImageFromBase64, deleteImageFile, getImagePath, getImageDir, ensure
 import { exportDataToFile, importDataFromFile } from './backup'
 import { WindowCapture } from './capture'
 import { sendNotification } from './notification'
+import { addReminderSchedule, cancelReminder, rescheduleAll } from './reminder-scheduler'
 
 let mainWindowRef: BrowserWindow
 
@@ -43,9 +57,24 @@ export function registerIpcHandlers(
   mainWindow: BrowserWindow,
   tracker: UsageTracker,
   pomodoro: PomodoroEngine,
-  floatingBall?: FloatingBallWindow
+  floatingBall?: FloatingBallWindow,
+  todoWindow?: TodoFloatingWindow
 ): void {
   mainWindowRef = mainWindow
+
+  const broadcastTodosChanged = (): void => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('todos:changed')
+    }
+    todoWindow?.refresh()
+  }
+
+  const broadcastRemindersChanged = (): void => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('reminders:changed')
+    }
+  }
+
   // ==================== Programs ====================
 
   ipcMain.handle('program:add', (_event, data) => {
@@ -97,6 +126,14 @@ export function registerIpcHandlers(
     return getProgramUsage(programId, range)
   })
 
+  ipcMain.handle('usage:getHourly', (_event, programId: number, date: string) => {
+    return getProgramHourlyUsage(programId, date)
+  })
+
+  ipcMain.handle('usage:getRange', (_event, startDate: string, endDate: string) => {
+    return getProgramUsageRange(startDate, endDate)
+  })
+
   // ==================== Goals ====================
 
   ipcMain.handle('goal:add', (_event, data) => {
@@ -135,6 +172,94 @@ export function registerIpcHandlers(
     return getGoalCompletions(goalId)
   })
 
+  // ==================== Todos ====================
+
+  ipcMain.handle('todo:getAll', () => {
+    return getTodos()
+  })
+
+  ipcMain.handle('todo:add', (_event, title: string) => {
+    const clean = String(title ?? '').trim().slice(0, 200)
+    if (!clean) return null
+    const todo = addTodo(clean)
+    broadcastTodosChanged()
+    return todo
+  })
+
+  ipcMain.handle('todo:toggle', (_event, id: number) => {
+    const todo = getTodo(id)
+    if (!todo) return null
+    const updated = updateTodo(id, { is_done: todo.is_done ? 0 : 1 })
+    broadcastTodosChanged()
+    return updated
+  })
+
+  ipcMain.handle('todo:update', (_event, id: number, data: { title?: string; is_done?: number }) => {
+    const next: { title?: string; is_done?: number } = {}
+    if (typeof data?.title === 'string') next.title = data.title.trim().slice(0, 200)
+    if (typeof data?.is_done === 'number') next.is_done = data.is_done ? 1 : 0
+    const updated = updateTodo(id, next)
+    broadcastTodosChanged()
+    return updated
+  })
+
+  ipcMain.handle('todo:delete', (_event, id: number) => {
+    deleteTodo(id)
+    broadcastTodosChanged()
+  })
+
+  ipcMain.handle('todo:clearCompleted', () => {
+    clearCompletedTodos()
+    broadcastTodosChanged()
+  })
+
+  // ==================== Todo Floating Window ====================
+
+  ipcMain.handle('todo:getFloatingEnabled', () => {
+    const profile = getUserProfile()
+    return !!(profile && profile.todo_floating_enabled)
+  })
+
+  ipcMain.handle('todo:toggleFloating', (_event, enabled: boolean) => {
+    const profile = getUserProfile()
+    updateUserProfile({ todo_floating_enabled: enabled ? 1 : 0 })
+    todoWindow?.setEnabled(!!enabled, profile?.theme_color)
+    return !!enabled
+  })
+
+  // The floating window's close button disables the feature and syncs the UI.
+  ipcMain.on('todo:floating-close', () => {
+    updateUserProfile({ todo_floating_enabled: 0 })
+    todoWindow?.setEnabled(false)
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('todo:floating-state', false)
+    }
+  })
+
+  // ==================== Reminders ====================
+
+  ipcMain.handle('reminder:getAll', () => {
+    return getReminders()
+  })
+
+  ipcMain.handle('reminder:add', (_event, title: string, delayMinutes: number) => {
+    const clean = String(title ?? '').trim().slice(0, 200)
+    const minutes = Number(delayMinutes)
+    if (!clean || !Number.isFinite(minutes) || minutes <= 0) return null
+
+    const remindAt = Date.now() + Math.round(minutes * 60 * 1000)
+    const reminder = addReminder(clean, remindAt)
+    if (reminder) addReminderSchedule(reminder)
+    broadcastRemindersChanged()
+    return reminder
+  })
+
+  ipcMain.handle('reminder:delete', (_event, id: number) => {
+    cancelReminder(id)
+    deleteReminder(id)
+    broadcastRemindersChanged()
+  })
+
   // ==================== Profile ====================
 
   ipcMain.handle('profile:get', () => {
@@ -151,11 +276,20 @@ export function registerIpcHandlers(
         if ('background_image_path' in data) {
           deleteImageIfReplaced(old.background_image_path, data.background_image_path)
         }
+        if ('pomodoro_floating_ball_image' in data) {
+          deleteImageIfReplaced(old.pomodoro_floating_ball_image, data.pomodoro_floating_ball_image)
+        }
+        if ('todo_floating_ball_image' in data) {
+          deleteImageIfReplaced(old.todo_floating_ball_image, data.todo_floating_ball_image)
+        }
       }
       const result = updateUserProfile(data)
-      // Sync floating ball theme color when theme changes
-      if (floatingBall && data.pomodoro_floating_ball_image !== undefined) {
-        // no-op: floating ball no longer uses custom images
+      // Sync floating ball appearance when theme color / background image changes
+      if (floatingBall && 'pomodoro_floating_ball_image' in data) {
+        floatingBall.setBallImage(data.pomodoro_floating_ball_image)
+      }
+      if (todoWindow && 'todo_floating_ball_image' in data) {
+        todoWindow.setBallImage(data.todo_floating_ball_image)
       }
       if (floatingBall && data.floating_ball_color !== undefined) {
         floatingBall.setThemeColor(data.floating_ball_color)
@@ -164,6 +298,9 @@ export function registerIpcHandlers(
       }
       if (floatingBall && data.pomodoro_floating_ball_enabled !== undefined) {
         floatingBall.setEnabled(!!data.pomodoro_floating_ball_enabled)
+      }
+      if (todoWindow && data.theme_color !== undefined) {
+        todoWindow.setThemeColor(data.theme_color)
       }
       return result
     } catch (err) {
@@ -201,6 +338,10 @@ export function registerIpcHandlers(
     if (ok) {
       // Refresh tracking cache so newly-imported programs are detected immediately
       tracker.updateProcessCache()
+      // Restore reminder timers from the newly-imported rows
+      rescheduleAll()
+      broadcastTodosChanged()
+      broadcastRemindersChanged()
     }
     return ok
   })
@@ -415,8 +556,11 @@ try {
 /**
  * Checks all goals against usage for the given date and records completions.
  * For achievement goals: marks complete and awards a heart when the user meets or exceeds the limit.
- * For restriction goals: sends a warning when the user exceeds the limit;
- * marks completion at end-of-day (past date) if the user stayed under the limit (no heart awarded).
+ * For restriction goals: sends a warning when the user exceeds the limit on the current day;
+ * for a past date where the user stayed under the limit, records the completion and awards a heart.
+ *
+ * Past dates are checked at day rollover / startup, so restriction goals can
+ * award hearts after the day has safely ended.
  */
 /**
  * @param date Date string YYYY-MM-DD to check
@@ -433,6 +577,11 @@ export function checkGoalCompletion(
 
   for (const goal of goals) {
     if (!goal.is_active) continue
+
+    // Never evaluate a goal for dates before it was created (past-date checks
+    // such as yesterday must not award retroactive hearts).
+    const createdDate: string = typeof goal.created_at === 'string' ? goal.created_at.slice(0, 10) : ''
+    if (createdDate && date < createdDate) continue
 
     const goalType: string = goal.goal_type || 'achievement'
     const programIds: number[] = goal.program_ids || []
@@ -489,7 +638,7 @@ export function checkGoalCompletion(
         // Congratulations notification
         sendNotification(
           `目标达成: ${goal.name}`,
-          `恭喜! 你已完成今日目标 ${Math.round(goal.daily_limit_seconds / 60)} 分钟!`,
+          `恭喜! 你已完成${isToday ? '今日' : ` ${date} `}目标 ${Math.round(goal.daily_limit_seconds / 60)} 分钟!`,
           () => {
             if (!mw.isDestroyed()) {
               mw.show()
@@ -500,26 +649,31 @@ export function checkGoalCompletion(
         )
       }
     } else if (goalType === 'restriction') {
-      // Restriction: user must stay under the limit
+      // Restriction: user must stay under the limit for the whole day
       if (achievedSeconds >= goal.daily_limit_seconds) {
-        // Exceeded limit — send warning notification ONCE per goal per day
-        const warnKey = `${goal.id}:${date}`
-        if (!warnedRestrictions.has(warnKey)) {
-          warnedRestrictions.add(warnKey)
-          const exceededMinutes = Math.round((achievedSeconds - goal.daily_limit_seconds) / 60)
-          sendNotification(
-            `目标超限警告: ${goal.name}`,
-            `注意! ${goal.name} 已超出限制 ${exceededMinutes} 分钟!`,
-            () => {
-              if (!mw.isDestroyed()) {
-                mw.show()
-                mw.focus()
+        // Exceeded limit — send warning notification ONCE per goal per day.
+        // Only warn for the current day; past-date checks run at rollover and
+        // must not notify about a day that has already ended.
+        if (isToday) {
+          const warnKey = `${goal.id}:${date}`
+          if (!warnedRestrictions.has(warnKey)) {
+            warnedRestrictions.add(warnKey)
+            const exceededMinutes = Math.round((achievedSeconds - goal.daily_limit_seconds) / 60)
+            sendNotification(
+              `目标超限警告: ${goal.name}`,
+              `注意! ${goal.name} 已超出限制 ${exceededMinutes} 分钟!`,
+              () => {
+                if (!mw.isDestroyed()) {
+                  mw.show()
+                  mw.focus()
+                }
               }
-            }
-          )
+            )
+          }
         }
       } else if (!isToday && !alreadyCompleted) {
-        // End-of-day check (past date): user stayed under limit — mark completion + award heart
+        // The day has ended and the user stayed under the limit —
+        // mark completion + award heart.
         addGoalCompletion(goal.id, date, achievedSeconds)
         const profile = getUserProfile()
         if (profile) {
@@ -529,7 +683,7 @@ export function checkGoalCompletion(
 
         sendNotification(
           `目标完成: ${goal.name}`,
-          `昨日你的 ${goal.name} 使用时长未超限，成功完成目标! 获得一颗♥`,
+          `${date} 你的 ${goal.name} 使用时长未超限，成功完成目标! 获得一颗♥`,
           () => {
             if (!mw.isDestroyed()) {
               mw.show()

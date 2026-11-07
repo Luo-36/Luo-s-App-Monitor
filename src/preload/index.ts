@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ElectronAPI, CreateProgramDTO, Program, Goal, CreateGoalDTO, UserProfile, PomodoroConfig, PomodoroState, TrackingTick } from '../renderer/src/types/index'
+import type { ElectronAPI, CreateProgramDTO, Program, Goal, CreateGoalDTO, UserProfile, PomodoroConfig, PomodoroState, TrackingTick, Todo, Reminder, ProgramRangeUsage } from '../renderer/src/types/index'
 
 // Remove duplicate listeners to avoid accumulation
 function safeOn(channel: string, callback: (...args: any[]) => void): () => void {
@@ -46,6 +46,14 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('usage:getProgram', programId, range)
   },
 
+  getProgramHourlyUsage(programId: number, date: string): Promise<number[]> {
+    return ipcRenderer.invoke('usage:getHourly', programId, date)
+  },
+
+  getProgramUsageRange(startDate: string, endDate: string): Promise<ProgramRangeUsage[]> {
+    return ipcRenderer.invoke('usage:getRange', startDate, endDate)
+  },
+
   // ===== Goals =====
   addGoal(data: CreateGoalDTO): Promise<Goal> {
     return ipcRenderer.invoke('goal:add', data)
@@ -73,6 +81,52 @@ const electronAPI: ElectronAPI = {
 
   getGoalCompletions(goalId: number): Promise<import('../renderer/src/types/index').GoalCompletion[]> {
     return ipcRenderer.invoke('goal:getCompletions', goalId)
+  },
+
+  // ===== Todos =====
+  getTodos(): Promise<Todo[]> {
+    return ipcRenderer.invoke('todo:getAll')
+  },
+
+  addTodo(title: string): Promise<Todo | null> {
+    return ipcRenderer.invoke('todo:add', title)
+  },
+
+  toggleTodo(id: number): Promise<Todo | null> {
+    return ipcRenderer.invoke('todo:toggle', id)
+  },
+
+  updateTodo(id: number, data: { title?: string; is_done?: number }): Promise<Todo | null> {
+    return ipcRenderer.invoke('todo:update', id, data)
+  },
+
+  deleteTodo(id: number): Promise<void> {
+    return ipcRenderer.invoke('todo:delete', id)
+  },
+
+  clearCompletedTodos(): Promise<void> {
+    return ipcRenderer.invoke('todo:clearCompleted')
+  },
+
+  getTodoFloatingEnabled(): Promise<boolean> {
+    return ipcRenderer.invoke('todo:getFloatingEnabled')
+  },
+
+  setTodoFloatingEnabled(enabled: boolean): Promise<boolean> {
+    return ipcRenderer.invoke('todo:toggleFloating', enabled)
+  },
+
+  // ===== Reminders =====
+  getReminders(): Promise<Reminder[]> {
+    return ipcRenderer.invoke('reminder:getAll')
+  },
+
+  addReminder(title: string, delayMinutes: number): Promise<Reminder | null> {
+    return ipcRenderer.invoke('reminder:add', title, delayMinutes)
+  },
+
+  deleteReminder(id: number): Promise<void> {
+    return ipcRenderer.invoke('reminder:delete', id)
   },
 
   // ===== Profile =====
@@ -200,6 +254,22 @@ const electronAPI: ElectronAPI = {
 
   onCaptureDetected(callback: (processName: string) => void): () => void {
     return safeOn('capture:detected', callback)
+  },
+
+  onTodosChanged(callback: () => void): () => void {
+    return safeOn('todos:changed', callback)
+  },
+
+  onRemindersChanged(callback: () => void): () => void {
+    return safeOn('reminders:changed', callback)
+  },
+
+  onReminderFired(callback: (title: string) => void): () => void {
+    return safeOn('reminder:fired', callback)
+  },
+
+  onTodoFloatingState(callback: (enabled: boolean) => void): () => void {
+    return safeOn('todo:floating-state', callback)
   }
 }
 

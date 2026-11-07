@@ -89,6 +89,45 @@ export function getImagePath(fileName: string): string {
   return path.join(getImageDir(), fileName)
 }
 
+function getMimeFromExt(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase()
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'webp':
+      return 'image/webp'
+    case 'gif':
+      return 'image/gif'
+    case 'bmp':
+      return 'image/bmp'
+    case 'ico':
+      return 'image/x-icon'
+    default:
+      return 'image/png'
+  }
+}
+
+/**
+ * Reads an image from userData/images (or an absolute path) and returns it as
+ * a data URL. Used for the floating balls, whose pages are loaded from a data:
+ * URL and therefore cannot load file:// resources. PNG alpha is preserved.
+ */
+export function readImageAsDataUrl(filePath: string | null | undefined): string | null {
+  if (!filePath) return null
+
+  try {
+    const resolved = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(getImageDir(), filePath)
+    const data = fs.readFileSync(resolved)
+    return `data:${getMimeFromExt(resolved)};base64,${data.toString('base64')}`
+  } catch (err) {
+    console.error(`[image-helper] Failed to read image ${filePath}:`, err)
+    return null
+  }
+}
+
 /**
  * Deletes an old image file when it has been replaced by a new one.
  *

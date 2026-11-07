@@ -7,6 +7,7 @@ import ImageCropper from '@/components/image/ImageCropper'
 import type { Program, CreateGoalDTO, CropData } from '@/types'
 import { api } from '@/api/bridge'
 import { toFileUrl } from '@/utils/fileUrl'
+import { cropImageToDataUrl } from '@/utils/cropImage'
 
 interface AddGoalModalProps {
   isOpen: boolean
@@ -87,9 +88,12 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
     fileInputRef.current?.click()
   }
 
-  const handleCropComplete = async (_cropData: CropData) => {
+  const handleCropComplete = async (cropData: CropData) => {
     try {
-      const path = await api.saveImage(cropImageSrc, 'cards', `card_${Date.now()}.png`)
+      // Crop the selected region before saving; otherwise the original
+      // uncropped image is stored.
+      const cropped = await cropImageToDataUrl(cropImageSrc, cropData)
+      const path = await api.saveImage(cropped, 'cards', `card_${Date.now()}.png`)
       setCardSrc(path)
     } catch (err) {
       console.error('Failed to save image:', err)
@@ -340,6 +344,9 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
             }
             reader.readAsDataURL(file)
           }
+          // Reset the input so picking another file with the same name fires
+          // change again (input.value is only "C:\fakepath\<name>").
+          e.target.value = ''
         }}
       />
 

@@ -5,6 +5,7 @@ export interface Program {
   process_name: string
   icon_path: string | null
   card_image_path: string | null
+  category: string | null
   is_active: number
   created_at: string
 }
@@ -14,6 +15,15 @@ export interface CreateProgramDTO {
   process_name: string
   icon_path?: string | null
   card_image_path?: string | null
+  category?: string | null
+}
+
+/** Per-program usage over a date range, used for the category breakdown. */
+export interface ProgramRangeUsage {
+  program_id: number
+  program_name: string
+  category: string | null
+  total_seconds: number
 }
 
 // ====== Usage Tracking Types ======
@@ -101,6 +111,24 @@ export interface UserProfile {
   floating_ball_color: string
   gui_scale: number
   auto_start: number
+  todo_floating_enabled: number
+  todo_floating_ball_image: string | null
+}
+
+// ====== Todo / Reminder Types ======
+export interface Todo {
+  id: number
+  title: string
+  is_done: number
+  created_at: string
+}
+
+export interface Reminder {
+  id: number
+  title: string
+  /** Epoch milliseconds when the notification should fire. */
+  remind_at: number
+  created_at: string
 }
 
 // ====== Pomodoro Types ======
@@ -144,6 +172,10 @@ export interface ElectronAPI {
   getTodayUsage(): Promise<UsageEntry[]>
   getTotalUsage(): Promise<UsageEntry[]>
   getProgramUsage(programId: number, range: '7d' | '30d'): Promise<DailyUsage[]>
+  /** Seconds used per local hour (24 entries, index 0 = 0:00). */
+  getProgramHourlyUsage(programId: number, date: string): Promise<number[]>
+  /** Per-program usage between two local dates (inclusive). */
+  getProgramUsageRange(startDate: string, endDate: string): Promise<ProgramRangeUsage[]>
 
   // Goals
   addGoal(data: CreateGoalDTO): Promise<Goal>
@@ -153,6 +185,21 @@ export interface ElectronAPI {
   getGoal(id: number): Promise<Goal | null>
   checkGoalCompletion(date: string): Promise<void>
   getGoalCompletions(goalId: number): Promise<GoalCompletion[]>
+
+  // Todos
+  getTodos(): Promise<Todo[]>
+  addTodo(title: string): Promise<Todo | null>
+  toggleTodo(id: number): Promise<Todo | null>
+  updateTodo(id: number, data: { title?: string; is_done?: number }): Promise<Todo | null>
+  deleteTodo(id: number): Promise<void>
+  clearCompletedTodos(): Promise<void>
+  getTodoFloatingEnabled(): Promise<boolean>
+  setTodoFloatingEnabled(enabled: boolean): Promise<boolean>
+
+  // Reminders
+  getReminders(): Promise<Reminder[]>
+  addReminder(title: string, delayMinutes: number): Promise<Reminder | null>
+  deleteReminder(id: number): Promise<void>
 
   // Profile
   getProfile(): Promise<UserProfile>
@@ -190,6 +237,10 @@ export interface ElectronAPI {
   onGoalReminder(callback: (goal: Goal) => void): () => void
   onVisibilityChange(callback: (visible: boolean) => void): () => void
   onProfileUpdated(callback: (data: { hearts_count: number }) => void): () => void
+  onTodosChanged(callback: () => void): () => void
+  onRemindersChanged(callback: () => void): () => void
+  onReminderFired(callback: (title: string) => void): () => void
+  onTodoFloatingState(callback: (enabled: boolean) => void): () => void
 
   // Floating Ball
   setFloatingBallEnabled(enabled: boolean): Promise<boolean>

@@ -40,6 +40,13 @@ function formatHours(seconds: number): string {
   return `${h} 小时`
 }
 
+/** Axis labels must never show more than two decimal places. */
+function formatTick(value: number | string): string {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return String(value)
+  return String(Math.round(num * 100) / 100)
+}
+
 export const LineChart: React.FC<LineChartProps> = ({ data, onPointClick }) => {
   const sortedData = useMemo(() => {
     const sorted = [...data]
@@ -110,7 +117,8 @@ export const LineChart: React.FC<LineChartProps> = ({ data, onPointClick }) => {
         borderWidth: 1,
         padding: 12,
         callbacks: {
-          label: (context: { raw: number }) => `${context.raw} 小时`
+          label: (context: { raw: number }) =>
+            `${formatTick(context.raw)} 小时`
         }
       }
     },
@@ -133,7 +141,7 @@ export const LineChart: React.FC<LineChartProps> = ({ data, onPointClick }) => {
         ticks: {
           color: 'rgb(148, 163, 184)',
           font: { size: 11 },
-          callback: (value: number) => `${value}h`
+          callback: (value: number | string) => `${formatTick(value)}h`
         }
       }
     },

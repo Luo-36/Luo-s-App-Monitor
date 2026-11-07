@@ -35,6 +35,13 @@ function formatDuration(seconds: number): string {
   return `${m}m`
 }
 
+/** Axis labels must never show more than two decimal places. */
+function formatTick(value: number | string): string {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return String(value)
+  return String(Math.round(num * 100) / 100)
+}
+
 export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
   data,
   sortAscending = false,
@@ -73,7 +80,9 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
         borderColor: `rgb(${primaryRgb})`,
         borderWidth: 1,
         borderRadius: 4,
-        barThickness: 28
+        // Fixed thickness keeps bars readable; the chart height below grows
+        // with the entry count so bars never get squeezed together.
+        barThickness: 26
       }
     ]
   }
@@ -108,7 +117,8 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
         },
         ticks: {
           color: 'rgb(148, 163, 184)',
-          font: { size: 11 }
+          font: { size: 11 },
+          callback: (value: number | string) => formatTick(value)
         }
       },
       y: {
@@ -117,7 +127,8 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
         },
         ticks: {
           color: 'rgb(148, 163, 184)',
-          font: { size: 12 }
+          font: { size: 12 },
+          autoSkip: false
         }
       }
     },
@@ -138,9 +149,15 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
     )
   }
 
+  // Give every category a fixed row height. With a fixed 256px container the
+  // rows would compress into unreadable slivers once a user has many programs.
+  const chartHeight = Math.max(256, sortedData.length * 42 + 16)
+
   return (
-    <div className="w-full h-64">
-      <Bar data={chartData} options={options} />
+    <div className="w-full max-h-[70vh] overflow-y-auto overflow-x-hidden pr-1">
+      <div style={{ height: chartHeight }}>
+        <Bar data={chartData} options={options} />
+      </div>
     </div>
   )
 }

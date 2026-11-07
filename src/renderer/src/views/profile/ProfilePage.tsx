@@ -3,6 +3,7 @@ import { Camera, Heart, Save } from 'lucide-react'
 import type { UserProfile, CropData } from '@/types'
 import { api } from '@/api/bridge'
 import { toFileUrl } from '@/utils/fileUrl'
+import { cropImageToDataUrl } from '@/utils/cropImage'
 import Card from '@/components/ui/Card'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
@@ -58,24 +59,7 @@ export const ProfilePage: React.FC = () => {
 
   const handleCropComplete = async (cropData: CropData) => {
     try {
-      // Crop the original image using canvas
-      const image = new Image()
-      image.src = cropImageSrc
-      await new Promise((resolve) => { image.onload = resolve })
-
-      const canvas = document.createElement('canvas')
-      canvas.width = cropData.width
-      canvas.height = cropData.height
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('Failed to get canvas context')
-
-      ctx.drawImage(
-        image,
-        cropData.x, cropData.y, cropData.width, cropData.height, // source rect
-        0, 0, cropData.width, cropData.height                    // dest rect
-      )
-
-      const croppedDataUrl = canvas.toDataURL('image/png')
+      const croppedDataUrl = await cropImageToDataUrl(cropImageSrc, cropData)
 
       // Save cropped avatar
       const path = await api.saveImage(croppedDataUrl, 'avatars', `avatar_${Date.now()}.png`)
