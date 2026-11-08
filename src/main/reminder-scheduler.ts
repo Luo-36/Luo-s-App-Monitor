@@ -91,7 +91,7 @@ function fire(id: number, fallbackTitle: string, overdue: boolean): void {
     ? `${reminder.title}（原定 ${formatDateTime(reminder.remind_at)}，补发提醒）`
     : reminder.title
 
-  sendNotification('⏰ 提醒', body || fallbackTitle)
+  sendNotification('提醒', body || fallbackTitle)
 
   try {
     onChanged?.()

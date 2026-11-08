@@ -38,6 +38,7 @@ export const TodoPage: React.FC = () => {
   const [ballImage, setBallImage] = useState<string | null>(null)
   const [ballSize, setBallSize] = useState(56)
   const [ballShape, setBallShape] = useState<'circle' | 'square'>('circle')
+  const [chatNotifications, setChatNotifications] = useState(true)
   const [uploadingBallImage, setUploadingBallImage] = useState(false)
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -74,6 +75,7 @@ export const TodoPage: React.FC = () => {
         setBallImage(profile.todo_floating_ball_image ?? null)
         setBallSize(profile.todo_ball_size || 56)
         setBallShape(profile.todo_ball_shape === 'square' ? 'square' : 'circle')
+        setChatNotifications(!!profile.todo_floating_chat_notifications)
       } catch (err) {
         console.error('Failed to load todo page data:', err)
       } finally {
@@ -193,6 +195,13 @@ export const TodoPage: React.FC = () => {
     })
   }
 
+  const handleChatNotificationsChange = (enabled: boolean) => {
+    setChatNotifications(enabled)
+    api.updateProfile({ todo_floating_chat_notifications: enabled ? 1 : 0 }).catch((err) => {
+      console.error('Failed to save chat notification setting:', err)
+    })
+  }
+
   const handleAddReminder = async (e?: React.FormEvent) => {
     e?.preventDefault()
     const title = reminderTitle.trim()
@@ -229,7 +238,7 @@ export const TodoPage: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">待办</h1>
         {/* <span className="text-sm text-text-secondary">
-          {pendingTodos.length > 0 ? `还有 ${pendingTodos.length} 项未完成` : '全部完成 🎉'}
+          {pendingTodos.length > 0 ? `还有 ${pendingTodos.length} 项未完成` : '全部完成'}
         </span> */ } 
       </div>
 
@@ -243,7 +252,7 @@ export const TodoPage: React.FC = () => {
             <div>
               <div className="text-sm font-medium text-white">桌面悬浮窗</div>
               <div className="text-xs text-text-secondary">
-                在桌面置顶显示待办清单，可缩小为悬浮球
+                在桌面置顶显示待办气泡，悬浮球始终可见，点击切换展开 / 收起
               </div>
             </div>
           </div>
@@ -315,6 +324,16 @@ export const TodoPage: React.FC = () => {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-white">通知气泡</div>
+            <div className="text-xs text-text-secondary">
+              系统通知同时以聊天气泡的方式显示在悬浮球左上角
+            </div>
+          </div>
+          <Switch checked={chatNotifications} onChange={handleChatNotificationsChange} />
         </div>
       </Card>
 

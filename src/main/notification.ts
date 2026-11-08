@@ -9,6 +9,15 @@ const scheduledReminders: NodeJS.Timeout[] = []
  */
 const activeNotifications = new Set<Notification>()
 
+/** Optional mirror channel (e.g. the todo floating ball's chat bubble). */
+let chatBubbleListener: ((title: string, body: string) => void) | null = null
+
+export function setChatBubbleListener(
+  listener: ((title: string, body: string) => void) | null
+): void {
+  chatBubbleListener = listener
+}
+
 /**
  * Sends a system notification to the user.
  * @param title Notification title
@@ -16,6 +25,14 @@ const activeNotifications = new Set<Notification>()
  * @param onClick Optional callback when the notification is clicked
  */
 export function sendNotification(title: string, body: string, onClick?: () => void): void {
+  // Mirror to the in-app chat bubble first so it still works when the OS
+  // suppresses native notifications.
+  try {
+    chatBubbleListener?.(title, body)
+  } catch (err) {
+    console.error('[notification] Chat bubble listener failed:', err)
+  }
+
   if (!Notification.isSupported()) {
     console.warn('[notification] System notifications are not supported on this platform')
     return

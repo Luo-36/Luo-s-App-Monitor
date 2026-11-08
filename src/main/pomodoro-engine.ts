@@ -1,5 +1,6 @@
-import { BrowserWindow, Notification } from 'electron'
+import { BrowserWindow } from 'electron'
 import { addPomodoroSession, getUserProfile, updateUserProfile, localDate } from './database'
+import { sendNotification } from './notification'
 
 interface PomodoroConfig {
   workMinutes: number
@@ -145,15 +146,10 @@ export class PomodoroEngine {
         }
 
         // Completion notification
-        try {
-          if (!this.mainWindow.isDestroyed()) {
-            const notif = new Notification({
-              title: '番茄钟完成! 🎉',
-              body: `你完成了 ${this.state.totalCycles} 轮番茄钟! 获得一颗♥`
-            })
-            notif.show()
-          }
-        } catch {}
+        sendNotification(
+          '番茄钟完成!',
+          `你完成了 ${this.state.totalCycles} 轮番茄钟! 获得一颗爱心`
+        )
 
         // Transition to long break as a reward
         this.state.phase = 'long_break'
@@ -167,15 +163,10 @@ export class PomodoroEngine {
         this.state.totalSeconds = this.state.remainingSeconds
 
         // Break start notification
-        try {
-          if (!this.mainWindow.isDestroyed()) {
-            const notif = new Notification({
-              title: '休息时间 ☕',
-              body: `休息 ${this.config?.breakMinutes ?? 5} 分钟，放松一下吧`
-            })
-            notif.show()
-          }
-        } catch {}
+        sendNotification(
+          '休息时间',
+          `休息 ${this.config?.breakMinutes ?? 5} 分钟，放松一下吧`
+        )
       }
     } else if (this.state.phase === 'long_break') {
       // Long break is over — go idle
@@ -198,15 +189,10 @@ export class PomodoroEngine {
       this.state.currentCycle++
 
       // Work start notification
-      try {
-        if (!this.mainWindow.isDestroyed()) {
-          const notif = new Notification({
-            title: '工作时间 💪',
-            body: `第 ${this.state.currentCycle}/${this.state.totalCycles} 轮，专注 ${this.config?.workMinutes ?? 25} 分钟`
-          })
-          notif.show()
-        }
-      } catch {}
+      sendNotification(
+        '工作时间',
+        `第 ${this.state.currentCycle}/${this.state.totalCycles} 轮，专注 ${this.config?.workMinutes ?? 25} 分钟`
+      )
     }
 
     // Start the next phase

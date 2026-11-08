@@ -11,6 +11,7 @@ import { setupTray, destroyTray, updateTrayMenu } from './tray'
 import { setAutoStart } from './auto-launch'
 import { checkGoalCompletion } from './ipc-handlers'
 import { initReminderScheduler } from './reminder-scheduler'
+import { setChatBubbleListener } from './notification'
 
 // Windows toast notifications need an explicit AppUserModelID. The packaged
 // build must use the same id as the installer shortcut (electron-builder appId);
@@ -189,12 +190,19 @@ function setup(): void {
   todoFloating = new TodoFloatingWindow()
   registerIpcHandlers(mainWindow, tracker, pomodoro, floatingBall, todoFloating)
 
+  // Mirror every system notification into the todo ball's chat bubble when
+  // the user has enabled that option.
+  setChatBubbleListener((title, body) => {
+    todoFloating?.notify(title, body)
+  })
+
   // 9b. Restore the todo floating window + scheduled reminders
   try {
     const profile = getUserProfile()
     if (profile) {
       todoFloating.setBallImage(profile.todo_floating_ball_image)
       todoFloating.setBallMetrics(profile.todo_ball_size, profile.todo_ball_shape)
+      todoFloating.setChatNotificationsEnabled(!!profile.todo_floating_chat_notifications)
       if (profile.todo_floating_enabled) {
         todoFloating.setEnabled(true, profile.theme_color)
       }

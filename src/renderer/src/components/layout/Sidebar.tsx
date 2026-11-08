@@ -9,7 +9,8 @@ import {
   User,
   Settings,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Heart
 } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { api } from '@/api/bridge'
@@ -84,7 +85,10 @@ export const Sidebar: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-white truncate">{userInfo.nickname}</div>
-                  <div className="text-xs text-pink-400">♥ {userInfo.hearts_count}</div>
+                  <div className="flex items-center gap-1 text-xs text-pink-400">
+                    <Heart className="w-3 h-3 fill-pink-400" />
+                    <span>{userInfo.hearts_count}</span>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -143,7 +147,7 @@ export const Sidebar: React.FC = () => {
       {/* Version */}
       {!sidebarCollapsed && (
         <div className="px-4 py-3 border-t border-white/5">
-          <span className="text-xs text-text-secondary/50">v1.2.0</span>
+          <span className="text-xs text-text-secondary/50">v1.3.0</span>
         </div>
       )}
     </aside>

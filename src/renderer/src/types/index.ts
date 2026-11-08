@@ -119,6 +119,8 @@ export interface UserProfile {
   todo_ball_size: number
   /** 'circle' | 'square' */
   todo_ball_shape: string
+  /** Whether system notifications are mirrored as chat bubbles near the todo ball. */
+  todo_floating_chat_notifications: number
 }
 
 // ====== Todo / Reminder Types ======

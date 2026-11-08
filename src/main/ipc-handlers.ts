@@ -297,6 +297,9 @@ export function registerIpcHandlers(
       if (todoWindow && ('todo_ball_size' in data || 'todo_ball_shape' in data)) {
         todoWindow.setBallMetrics(result.todo_ball_size, result.todo_ball_shape)
       }
+      if (todoWindow && 'todo_floating_chat_notifications' in data) {
+        todoWindow.setChatNotificationsEnabled(!!result.todo_floating_chat_notifications)
+      }
       if (floatingBall && data.floating_ball_color !== undefined) {
         floatingBall.setThemeColor(data.floating_ball_color)
       } else if (floatingBall && data.theme_color !== undefined) {
@@ -689,7 +692,7 @@ export function checkGoalCompletion(
 
         sendNotification(
           `目标完成: ${goal.name}`,
-          `${date} 你的 ${goal.name} 使用时长未超限，成功完成目标! 获得一颗♥`,
+          `${date} 你的 ${goal.name} 使用时长未超限，成功完成目标! 获得一颗爱心`,
           () => {
             if (!mw.isDestroyed()) {
               mw.show()

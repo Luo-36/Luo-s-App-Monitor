@@ -137,7 +137,8 @@ function createTables(): void {
       pomodoro_ball_size INTEGER NOT NULL DEFAULT 72,
       pomodoro_ball_shape TEXT NOT NULL DEFAULT 'circle',
       todo_ball_size INTEGER NOT NULL DEFAULT 56,
-      todo_ball_shape TEXT NOT NULL DEFAULT 'circle'
+      todo_ball_shape TEXT NOT NULL DEFAULT 'circle',
+      todo_floating_chat_notifications INTEGER NOT NULL DEFAULT 1
     )
   `)
 
@@ -276,6 +277,9 @@ function migrateUserProfileAddBallMetrics(): void {
   }
   if (!has('todo_ball_shape')) {
     db.exec(`ALTER TABLE user_profile ADD COLUMN todo_ball_shape TEXT NOT NULL DEFAULT 'circle'`)
+  }
+  if (!has('todo_floating_chat_notifications')) {
+    db.exec(`ALTER TABLE user_profile ADD COLUMN todo_floating_chat_notifications INTEGER NOT NULL DEFAULT 1`)
   }
 }
 

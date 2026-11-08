@@ -10,22 +10,53 @@ const themeColors: Record<string, string> = {
   taupe: '#B8B0A0'     // 莫兰迪灰
 }
 
-const PANEL_WIDTH = 300
-const PANEL_HEIGHT = 400
 const DEFAULT_BALL_SIZE = 56
-/** Extra window space around the ball so its badge is never clipped. */
-const BALL_MARGIN = 8
+/** Extra space around the ball so the pending badge is never clipped. */
+const BALL_MARGIN = 4
+/** Gap between the ball and its chat bubble. */
+const BUBBLE_GAP = 10
+const BUBBLE_WIDTH = 300
+const BUBBLE_HEIGHT = 380
+const NOTIFICATION_HEIGHT = 128
+const MIN_TODO_HEIGHT = 160
+const MIN_NOTIFICATION_HEIGHT = 96
+/** How long a chat-bubble notification stays visible. */
+const NOTIFICATION_DURATION_MS = 8000
+
+type TailCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+
+interface WindowLayout {
+  expanded: boolean
+  mode: 'todo' | 'notification'
+  ballLeft: number
+  ballTop: number
+  bubbleLeft: number
+  bubbleTop: number
+  bubbleWidth: number
+  bubbleHeight: number
+  tail: TailCorner
+}
+
+interface BubblePlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  tail: TailCorner
+}
+
+interface ChatNotification {
+  title: string
+  body: string
+}
 
 /**
- * A small always-on-top sticky-notes style window that shows the todo list.
- * Frameless, draggable and themed with the app's accent color.
+ * A small always-on-top sticky-notes window.
  *
- * It can collapse into a small floating ball showing the pending count; both
- * the panel and the ball support a custom background image (transparent PNGs
- * included).
- *
- * The window renders a tiny self-contained HTML page (same approach as the
- * pomodoro floating ball) and talks to the todo IPC handlers directly.
+ * It shows a floating ball with the pending count. Clicking the ball opens
+ * the todo list as a chat bubble (default: above-left of the ball) while the
+ * ball stays visible. When enabled, system notifications are also mirrored
+ * into the same chat bubble.
  */
 export class TodoFloatingWindow {
   private window: BrowserWindow | null = null
@@ -34,10 +65,27 @@ export class TodoFloatingWindow {
   private ballImageDataUrl: string | null = null
   private ballSize: number = DEFAULT_BALL_SIZE
   private ballShape: 'circle' | 'square' = 'circle'
-  private mode: 'panel' | 'ball' = 'panel'
+  private expanded: boolean = true
+  private chatNotificationsEnabled: boolean = true
+  private notification: ChatNotification | null = null
+  private notificationTimer: NodeJS.Timeout | null = null
+
+  /** Top-left of the ball inside the window. */
+  private ballOffset = { x: BALL_MARGIN, y: BALL_MARGIN }
+  private layout: WindowLayout = {
+    expanded: false,
+    mode: 'todo',
+    ballLeft: BALL_MARGIN,
+    ballTop: BALL_MARGIN,
+    bubbleLeft: 0,
+    bubbleTop: 0,
+    bubbleWidth: BUBBLE_WIDTH,
+    bubbleHeight: BUBBLE_HEIGHT,
+    tail: 'bottom-right'
+  }
 
   constructor() {
-    this.registerDragHandlers()
+    this.registerIpcHandlers()
   }
 
   // ---- Public API ----
@@ -63,7 +111,7 @@ export class TodoFloatingWindow {
   }
 
   /**
-   * Sets the collapsed ball's custom background image (null clears it).
+   * Sets the floating ball's custom background image (null clears it).
    * Transparent PNGs are supported.
    */
   setBallImage(imagePath: string | null | undefined): void {
@@ -71,7 +119,7 @@ export class TodoFloatingWindow {
     this.sendAppearance()
   }
 
-  /** Updates the collapsed ball's size (px) and circle/square shape. */
+  /** Updates the floating ball's size (px) and circle/square shape. */
   setBallMetrics(size: number | undefined, shape: string | undefined): void {
     const nextSize = Number(size)
     if (Number.isFinite(nextSize)) {
@@ -79,8 +127,36 @@ export class TodoFloatingWindow {
     }
     this.ballShape = shape === 'square' ? 'square' : 'circle'
 
-    this.resizeForCurrentMode()
+    this.applyLayout()
     this.sendAppearance()
+  }
+
+  /** Enables/disables mirroring system notifications into the chat bubble. */
+  setChatNotificationsEnabled(enabled: boolean): void {
+    this.chatNotificationsEnabled = !!enabled
+    if (!this.chatNotificationsEnabled) {
+      this.clearNotification()
+    }
+  }
+
+  /**
+   * Shows a notification as a chat bubble attached to the floating ball.
+   * No-op when the floating window or the chat-notification option is off.
+   */
+  notify(title: string, body: string): void {
+    if (!this.enabled || !this.chatNotificationsEnabled) return
+    if (!this.window || this.window.isDestroyed()) return
+
+    this.notification = { title: title || '通知', body: body || '' }
+    this.sendNotificationContent()
+    this.applyLayout()
+
+    if (!this.window.isVisible()) {
+      this.window.showInactive()
+    }
+
+    if (this.notificationTimer) clearTimeout(this.notificationTimer)
+    this.notificationTimer = setTimeout(() => this.clearNotification(), NOTIFICATION_DURATION_MS)
   }
 
   /** Ask the floating window to re-fetch the todo list. */
@@ -96,6 +172,8 @@ export class TodoFloatingWindow {
     if (this.window && !this.window.isDestroyed()) {
       this.window.showInactive()
       this.sendAppearance()
+      this.sendLayout()
+      this.sendNotificationContent()
       this.refresh()
       return
     }
@@ -105,6 +183,8 @@ export class TodoFloatingWindow {
       this.window.once('ready-to-show', () => {
         this.window?.showInactive()
         this.sendAppearance()
+        this.sendLayout()
+        this.sendNotificationContent()
       })
     }
   }
@@ -116,6 +196,10 @@ export class TodoFloatingWindow {
   }
 
   destroy(): void {
+    if (this.notificationTimer) {
+      clearTimeout(this.notificationTimer)
+      this.notificationTimer = null
+    }
     if (this.window && !this.window.isDestroyed()) {
       this.window.destroy()
     }
@@ -123,6 +207,18 @@ export class TodoFloatingWindow {
   }
 
   // ---- Internal ----
+
+  private clearNotification(): void {
+    if (this.notificationTimer) {
+      clearTimeout(this.notificationTimer)
+      this.notificationTimer = null
+    }
+    if (!this.notification) return
+
+    this.notification = null
+    this.sendNotificationContent()
+    this.applyLayout()
+  }
 
   private sendAppearance(): void {
     if (!this.window || this.window.isDestroyed()) return
@@ -136,24 +232,201 @@ export class TodoFloatingWindow {
     } catch { /* window may be closing */ }
   }
 
-  /** Resizes the window to match the current panel/ball mode. */
-  private resizeForCurrentMode(): void {
+  private sendLayout(): void {
     if (!this.window || this.window.isDestroyed()) return
-    const [x, y] = this.window.getPosition()
-    if (this.mode === 'ball') {
-      const size = this.ballSize + BALL_MARGIN
-      this.window.setBounds({ x, y, width: size, height: size })
-    } else {
-      this.window.setBounds({ x, y, width: PANEL_WIDTH, height: PANEL_HEIGHT })
+    try {
+      this.window.webContents.send('todo:win:layout', this.layout)
+    } catch { /* window may be closing */ }
+  }
+
+  private sendNotificationContent(): void {
+    if (!this.window || this.window.isDestroyed()) return
+    try {
+      this.window.webContents.send('todo:win:notification', this.notification)
+    } catch { /* window may be closing */ }
+  }
+
+  /** Top-left of the ball in screen coordinates. */
+  private getBallScreenPos(): { x: number; y: number } {
+    if (!this.window || this.window.isDestroyed()) return { x: 0, y: 0 }
+    const [wx, wy] = this.window.getPosition()
+    return { x: wx + this.ballOffset.x, y: wy + this.ballOffset.y }
+  }
+
+  /**
+   * Places the bubble relative to the ball. Preferred position is the
+   * upper-left of the ball; other sides are used when there is no room.
+   */
+  private computeBubblePlacement(
+    ball: { x: number; y: number },
+    bubbleWidth: number,
+    preferredHeight: number,
+    minHeight: number
+  ): BubblePlacement {
+    const ballRect = {
+      x: ball.x,
+      y: ball.y,
+      width: this.ballSize,
+      height: this.ballSize
     }
+    const { workArea } = screen.getDisplayMatching(ballRect)
+
+    const margin = 8
+    const areaLeft = workArea.x + margin
+    const areaTop = workArea.y + margin
+    const areaRight = workArea.x + workArea.width - margin
+    const areaBottom = workArea.y + workArea.height - margin
+
+    const spaceAbove = ball.y - BUBBLE_GAP - areaTop
+    const spaceBelow = areaBottom - (ball.y + this.ballSize + BUBBLE_GAP)
+    const spaceLeft = ball.x - BUBBLE_GAP - areaLeft
+    const spaceRight = areaRight - (ball.x + this.ballSize + BUBBLE_GAP)
+
+    // Vertical: prefer above (the requested default), then below; shrink if
+    // neither side can fit the full bubble.
+    let above = true
+    let height = preferredHeight
+    if (spaceAbove >= preferredHeight) {
+      above = true
+    } else if (spaceBelow >= preferredHeight) {
+      above = false
+    } else {
+      above = spaceAbove >= spaceBelow
+      height = Math.max(minHeight, Math.min(preferredHeight, above ? spaceAbove : spaceBelow))
+    }
+
+    // Horizontal: prefer left, then right, then clamp inside the work area.
+    let x: number
+    if (spaceLeft >= bubbleWidth) {
+      x = ball.x - BUBBLE_GAP - bubbleWidth
+    } else if (spaceRight >= bubbleWidth) {
+      x = ball.x + this.ballSize + BUBBLE_GAP
+    } else {
+      x = Math.max(
+        areaLeft,
+        Math.min(ball.x - BUBBLE_GAP - bubbleWidth, areaRight - bubbleWidth)
+      )
+    }
+
+    let y = above
+      ? ball.y - BUBBLE_GAP - height
+      : ball.y + this.ballSize + BUBBLE_GAP
+
+    // Final vertical clamp so the bubble stays inside the work area.
+    if (above && y < areaTop) {
+      height = Math.max(minHeight, ball.y - BUBBLE_GAP - areaTop)
+      y = ball.y - BUBBLE_GAP - height
+    } else if (!above && y + height > areaBottom) {
+      height = Math.max(minHeight, areaBottom - y)
+    }
+
+    x = Math.max(areaLeft, Math.min(x, areaRight - bubbleWidth))
+
+    // Point the tail toward the ball.
+    const ballCx = ball.x + this.ballSize / 2
+    const ballCy = ball.y + this.ballSize / 2
+    const bubbleCx = x + bubbleWidth / 2
+    const bubbleCy = y + height / 2
+    const tailX = bubbleCx <= ballCx ? 'right' : 'left'
+    const tailY = bubbleCy <= ballCy ? 'bottom' : 'top'
+
+    return {
+      x,
+      y,
+      width: bubbleWidth,
+      height,
+      tail: `${tailY}-${tailX}` as TailCorner
+    }
+  }
+
+  /**
+   * Recomputes the window bounds from the ball's current screen position.
+   * The ball is the anchor: it must not move when the bubble opens/closes.
+   */
+  private applyLayout(): void {
+    if (!this.window || this.window.isDestroyed()) return
+
+    const ball = this.getBallScreenPos()
+    const showBubble = this.expanded || this.notification !== null
+
+    if (!showBubble) {
+      const size = this.ballSize + BALL_MARGIN * 2
+      this.window.setBounds({
+        x: ball.x - BALL_MARGIN,
+        y: ball.y - BALL_MARGIN,
+        width: size,
+        height: size
+      })
+      this.ballOffset = { x: BALL_MARGIN, y: BALL_MARGIN }
+      this.layout = {
+        expanded: false,
+        mode: 'todo',
+        ballLeft: BALL_MARGIN,
+        ballTop: BALL_MARGIN,
+        bubbleLeft: 0,
+        bubbleTop: 0,
+        bubbleWidth: BUBBLE_WIDTH,
+        bubbleHeight: 0,
+        tail: 'bottom-right'
+      }
+      this.sendLayout()
+      return
+    }
+
+    const mode: WindowLayout['mode'] = this.notification ? 'notification' : 'todo'
+    const preferredHeight = mode === 'notification' ? NOTIFICATION_HEIGHT : BUBBLE_HEIGHT
+    const minHeight = mode === 'notification' ? MIN_NOTIFICATION_HEIGHT : MIN_TODO_HEIGHT
+
+    const bubble = this.computeBubblePlacement(ball, BUBBLE_WIDTH, preferredHeight, minHeight)
+
+    const left = Math.min(ball.x - BALL_MARGIN, bubble.x)
+    const top = Math.min(ball.y - BALL_MARGIN, bubble.y)
+    const right = Math.max(ball.x + this.ballSize + BALL_MARGIN, bubble.x + bubble.width)
+    const bottom = Math.max(ball.y + this.ballSize + BALL_MARGIN, bubble.y + bubble.height)
+
+    const ballLeft = ball.x - left
+    const ballTop = ball.y - top
+
+    this.window.setBounds({
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top
+    })
+
+    this.ballOffset = { x: ballLeft, y: ballTop }
+    this.layout = {
+      expanded: true,
+      mode,
+      ballLeft,
+      ballTop,
+      bubbleLeft: bubble.x - left,
+      bubbleTop: bubble.y - top,
+      bubbleWidth: bubble.width,
+      bubbleHeight: bubble.height,
+      tail: bubble.tail
+    }
+    this.sendLayout()
+  }
+
+  private setExpanded(expanded: boolean): void {
+    this.expanded = expanded
+    this.applyLayout()
   }
 
   private create(): void {
     if (this.window && !this.window.isDestroyed()) return
 
+    const { workArea } = screen.getPrimaryDisplay()
+    const size = this.ballSize + BALL_MARGIN * 2
+    // Default near the bottom-right so the bubble has room above-left. Keep
+    // it above the pomodoro floating ball's corner to avoid overlapping it.
+    const ballX = workArea.x + workArea.width - 24 - this.ballSize
+    const ballY = workArea.y + workArea.height - 150 - this.ballSize
+
     this.window = new BrowserWindow({
-      width: PANEL_WIDTH,
-      height: PANEL_HEIGHT,
+      width: size,
+      height: size,
       frame: false,
       transparent: true,
       alwaysOnTop: true,
@@ -165,27 +438,25 @@ export class TodoFloatingWindow {
     })
 
     this.window.setAlwaysOnTop(true, 'floating')
+    this.window.setPosition(ballX - BALL_MARGIN, ballY - BALL_MARGIN)
+    this.ballOffset = { x: BALL_MARGIN, y: BALL_MARGIN }
     this.window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(this.getHtml())}`)
 
-    // Re-send appearance after (re)load so a custom background survives the
-    // window being created before the page is ready.
     this.window.webContents.on('did-finish-load', () => {
       this.sendAppearance()
+      this.sendLayout()
+      this.sendNotificationContent()
       this.refresh()
     })
-
-    const { workArea } = screen.getPrimaryDisplay()
-    this.window.setPosition(
-      workArea.x + workArea.width - PANEL_WIDTH - 24,
-      workArea.y + 24
-    )
 
     this.window.on('closed', () => {
       this.window = null
     })
+
+    this.applyLayout()
   }
 
-  private registerDragHandlers(): void {
+  private registerIpcHandlers(): void {
     ipcMain.on('todo:win:dragStart', (_event, { screenX, screenY }) => {
       if (!this.window || this.window.isDestroyed()) return
       const [wx, wy] = this.window.getPosition()
@@ -205,14 +476,21 @@ export class TodoFloatingWindow {
       }
     })
 
-    // Collapse into / expand from the floating ball
-    ipcMain.on('todo:win:resize', (_event, mode: 'ball' | 'panel') => {
-      this.mode = mode === 'ball' ? 'ball' : 'panel'
-      this.resizeForCurrentMode()
-      if (this.mode === 'ball') {
-        // Re-send metrics: the ball page might have just been resized.
-        this.sendAppearance()
+    // Ball click: dismiss a notification first, otherwise toggle the list.
+    ipcMain.on('todo:win:toggle', () => {
+      if (this.notification) {
+        this.clearNotification()
+        return
       }
+      this.setExpanded(!this.expanded)
+    })
+
+    ipcMain.on('todo:win:collapse', () => {
+      this.setExpanded(false)
+    })
+
+    ipcMain.on('todo:win:dismiss-notification', () => {
+      this.clearNotification()
     })
   }
 
@@ -223,13 +501,41 @@ export class TodoFloatingWindow {
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;}
-#app{
-  width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;
-  border-radius:14px;background:#0F172A;
+#ballWrap{
+  position:absolute;left:4px;top:4px;
+  width:var(--ball-size,56px);height:var(--ball-size,56px);
+  cursor:grab;
+}
+#ballWrap:active{cursor:grabbing;}
+#ball{
+  width:100%;height:100%;border-radius:var(--ball-radius,50%);position:relative;
+  background:var(--accent);
+  background-size:cover;background-position:center;background-repeat:no-repeat;
+  display:flex;align-items:center;justify-content:center;
+}
+#badge{
+  position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;
+  border-radius:9px;background:#EF4444;color:#fff;font-size:10px;font-weight:700;
+  display:none;align-items:center;justify-content:center;
+  border:1.5px solid rgba(15,23,42,0.9);
+}
+#ballIcon{color:#0F172A;pointer-events:none;opacity:0.85;}
+#bubble{
+  position:absolute;display:none;flex-direction:column;
+  border-radius:16px;background:#0F172A;
   border:1px solid rgba(255,255,255,0.10);
-  box-shadow:0 10px 30px rgba(0,0,0,0.45);
+  box-shadow:0 16px 42px rgba(0,0,0,0.45);
   color:#F8FAFC;
 }
+#tail{
+  position:absolute;width:12px;height:12px;background:#0F172A;
+  transform:rotate(45deg);border-radius:2px;
+}
+#bubble.tail-bottom-right #tail{bottom:-6px;right:16px;}
+#bubble.tail-bottom-left #tail{bottom:-6px;left:16px;}
+#bubble.tail-top-right #tail{top:-6px;right:16px;}
+#bubble.tail-top-left #tail{top:-6px;left:16px;}
+#todoView{display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden;border-radius:16px;}
 #header{
   height:40px;flex-shrink:0;display:flex;align-items:center;gap:8px;
   padding:0 12px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:grab;
@@ -284,62 +590,72 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
   font-weight:600;color:#0F172A;background:var(--accent);cursor:pointer;
 }
 #addBtn:hover{filter:brightness(1.08);}
-#ballWrap{
-  display:none;width:100%;height:100%;align-items:center;justify-content:center;
+#notificationView{
+  display:none;flex-direction:column;flex:1;min-height:0;
+  padding:12px 14px;gap:6px;border-radius:16px;
 }
-#ball{
-  width:var(--ball-size,56px);height:var(--ball-size,56px);
-  border-radius:var(--ball-radius,50%);position:relative;cursor:grab;
-  background:var(--accent);
-  background-size:cover;background-position:center;background-repeat:no-repeat;
-  display:flex;align-items:center;justify-content:center;
+#notifHeader{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+#notifIcon{color:var(--accent);flex-shrink:0;}
+#notifTitle{
+  flex:1;min-width:0;font-size:13px;font-weight:600;color:#fff;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-#ball:active{cursor:grabbing;}
-#badge{
-  position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;
-  border-radius:9px;background:#EF4444;color:#fff;font-size:10px;font-weight:700;
-  display:none;align-items:center;justify-content:center;
-  border:1.5px solid rgba(15,23,42,0.9);
+#notifBody{
+  flex:1;overflow-y:auto;font-size:12px;line-height:1.55;color:#CBD5E1;
+  white-space:pre-wrap;word-break:break-word;
 }
-#ballIcon{color:#0F172A;pointer-events:none;opacity:0.85;}
 ::-webkit-scrollbar{width:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.3);border-radius:2px;}
 </style></head><body>
-<div id="app">
-  <div id="header">
-    <span id="title">待办</span>
-    <span id="count"></span>
-    <button id="collapse" class="hbtn" title="缩小为悬浮球">−</button>
-    <button id="close" class="hbtn" title="关闭悬浮窗">✕</button>
-  </div>
-  <div id="list"></div>
-  <div id="addRow">
-    <input id="newTodo" maxlength="200" placeholder="添加待办，回车确认" />
-    <button id="addBtn">添加</button>
-  </div>
-</div>
 <div id="ballWrap">
   <div id="ball">
     <svg id="ballIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
     <span id="badge"></span>
   </div>
 </div>
+<div id="bubble">
+  <div id="todoView">
+    <div id="header">
+      <span id="title">待办</span>
+      <span id="count"></span>
+      <button id="collapse" class="hbtn" title="收起气泡">−</button>
+      <button id="close" class="hbtn" title="关闭悬浮窗">✕</button>
+    </div>
+    <div id="list"></div>
+    <div id="addRow">
+      <input id="newTodo" maxlength="200" placeholder="添加待办，回车确认" />
+      <button id="addBtn">添加</button>
+    </div>
+  </div>
+  <div id="notificationView">
+    <div id="notifHeader">
+      <svg id="notifIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      <span id="notifTitle">通知</span>
+      <button id="notifClose" class="hbtn" title="关闭通知">✕</button>
+    </div>
+    <div id="notifBody"></div>
+  </div>
+  <div id="tail"></div>
+</div>
 <script>
 var ipc = require('electron').ipcRenderer;
-var appEl = document.getElementById('app');
-var panelHeader = document.getElementById('header');
+var ballWrap = document.getElementById('ballWrap');
+var ballEl = document.getElementById('ball');
+var ballIcon = document.getElementById('ballIcon');
+var bubbleEl = document.getElementById('bubble');
+var todoView = document.getElementById('todoView');
+var notificationView = document.getElementById('notificationView');
+var notifTitle = document.getElementById('notifTitle');
+var notifBody = document.getElementById('notifBody');
+var headerEl = document.getElementById('header');
 var listEl = document.getElementById('list');
 var countEl = document.getElementById('count');
 var inputEl = document.getElementById('newTodo');
-var ballWrap = document.getElementById('ballWrap');
-var ballEl = document.getElementById('ball');
 var badgeEl = document.getElementById('badge');
 var currentTodos = [];
 var pendingCount = 0;
 var ballImage = null;
-var ballIcon = document.getElementById('ballIcon');
-var mode = 'panel';
 var CHECK_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
 function esc(s) {
@@ -418,23 +734,14 @@ inputEl.addEventListener('keydown', function (e) {
   if (e.key === 'Enter') addTodo();
 });
 
-function enterBallMode() {
-  mode = 'ball';
-  appEl.style.display = 'none';
-  ballWrap.style.display = 'flex';
-  ipc.send('todo:win:resize', 'ball');
-}
-
-function enterPanelMode() {
-  mode = 'panel';
-  ballWrap.style.display = 'none';
-  appEl.style.display = 'flex';
-  ipc.send('todo:win:resize', 'panel');
-}
-
-document.getElementById('collapse').addEventListener('click', enterBallMode);
+document.getElementById('collapse').addEventListener('click', function () {
+  ipc.send('todo:win:collapse');
+});
 document.getElementById('close').addEventListener('click', function () {
   ipc.send('todo:floating-close');
+});
+document.getElementById('notifClose').addEventListener('click', function () {
+  ipc.send('todo:win:dismiss-notification');
 });
 
 // Keep the list in sync with the main window
@@ -451,7 +758,7 @@ ipc.on('todo:win:image', function (e, dataUrl) {
   applyBallAppearance();
 });
 
-// Size / shape of the collapsed ball
+// Size / shape of the ball
 ipc.on('todo:win:metrics', function (e, m) {
   if (!m) return;
   var size = Math.max(40, Math.min(140, Number(m.size) || 56));
@@ -463,7 +770,32 @@ ipc.on('todo:win:metrics', function (e, m) {
   ballIcon.setAttribute('height', iconSize);
 });
 
-// Drag the window by its header (panel) or the ball itself
+// Notification text
+ipc.on('todo:win:notification', function (e, n) {
+  notifTitle.textContent = n && n.title ? n.title : '通知';
+  notifBody.textContent = n && n.body ? n.body : '';
+});
+
+// Ball + bubble placement inside the (transparent) window
+ipc.on('todo:win:layout', function (e, l) {
+  if (!l) return;
+  ballWrap.style.left = l.ballLeft + 'px';
+  ballWrap.style.top = l.ballTop + 'px';
+  bubbleEl.style.display = l.expanded ? 'flex' : 'none';
+  if (!l.expanded) return;
+
+  bubbleEl.style.left = l.bubbleLeft + 'px';
+  bubbleEl.style.top = l.bubbleTop + 'px';
+  bubbleEl.style.width = l.bubbleWidth + 'px';
+  bubbleEl.style.height = l.bubbleHeight + 'px';
+  bubbleEl.className = 'tail-' + l.tail;
+
+  var showNotification = l.mode === 'notification';
+  notificationView.style.display = showNotification ? 'flex' : 'none';
+  todoView.style.display = showNotification ? 'none' : 'flex';
+});
+
+// Drag the window by the ball or the bubble header
 var drag = { active: false, moved: false, sx: 0, sy: 0 };
 
 function startDrag(e) {
@@ -474,20 +806,20 @@ function startDrag(e) {
   ipc.send('todo:win:dragStart', { screenX: e.screenX, screenY: e.screenY });
 }
 
-panelHeader.addEventListener('mousedown', function (e) {
-  if (e.target.closest('button')) return;
-  startDrag(e);
-});
-
-ballEl.addEventListener('mousedown', function (e) {
+ballWrap.addEventListener('mousedown', function (e) {
   if (e.button !== 0) return;
   e.preventDefault();
   startDrag(e);
 });
 
-ballEl.addEventListener('mouseup', function () {
-  // A click without movement expands the panel; dragging just moves the ball.
-  if (drag.active && !drag.moved) enterPanelMode();
+ballWrap.addEventListener('mouseup', function () {
+  // A click without movement toggles the bubble; dragging just moves it.
+  if (drag.active && !drag.moved) ipc.send('todo:win:toggle');
+});
+
+headerEl.addEventListener('mousedown', function (e) {
+  if (e.target.closest('button')) return;
+  startDrag(e);
 });
 
 document.addEventListener('mousemove', function (e) {
