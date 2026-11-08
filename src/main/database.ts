@@ -133,7 +133,11 @@ function createTables(): void {
       pomodoro_floating_ball_enabled INTEGER NOT NULL DEFAULT 0,
       auto_start INTEGER NOT NULL DEFAULT 0,
       todo_floating_enabled INTEGER NOT NULL DEFAULT 0,
-      todo_floating_ball_image TEXT
+      todo_floating_ball_image TEXT,
+      pomodoro_ball_size INTEGER NOT NULL DEFAULT 72,
+      pomodoro_ball_shape TEXT NOT NULL DEFAULT 'circle',
+      todo_ball_size INTEGER NOT NULL DEFAULT 56,
+      todo_ball_shape TEXT NOT NULL DEFAULT 'circle'
     )
   `)
 
@@ -175,6 +179,7 @@ function runMigrations(): void {
   migrateUserProfileAddFloatingBallColor()
   migrateUserProfileAddTodoFloating()
   migrateUserProfileAddTodoBallImage()
+  migrateUserProfileAddBallMetrics()
   migrateProgramsAddCategory()
   migrateGoalsToJunctionTable()
 }
@@ -253,6 +258,24 @@ function migrateUserProfileAddTodoBallImage(): void {
       ALTER TABLE user_profile
       ADD COLUMN todo_floating_ball_image TEXT
     `)
+  }
+}
+
+function migrateUserProfileAddBallMetrics(): void {
+  const columns: any[] = db.prepare('PRAGMA table_info(user_profile)').all()
+  const has = (name: string) => columns.some((col: any) => col.name === name)
+
+  if (!has('pomodoro_ball_size')) {
+    db.exec(`ALTER TABLE user_profile ADD COLUMN pomodoro_ball_size INTEGER NOT NULL DEFAULT 72`)
+  }
+  if (!has('pomodoro_ball_shape')) {
+    db.exec(`ALTER TABLE user_profile ADD COLUMN pomodoro_ball_shape TEXT NOT NULL DEFAULT 'circle'`)
+  }
+  if (!has('todo_ball_size')) {
+    db.exec(`ALTER TABLE user_profile ADD COLUMN todo_ball_size INTEGER NOT NULL DEFAULT 56`)
+  }
+  if (!has('todo_ball_shape')) {
+    db.exec(`ALTER TABLE user_profile ADD COLUMN todo_ball_shape TEXT NOT NULL DEFAULT 'circle'`)
   }
 }
 

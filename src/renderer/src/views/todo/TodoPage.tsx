@@ -7,6 +7,7 @@ import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Switch from '@/components/ui/Switch'
+import Slider from '@/components/ui/Slider'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
 const QUICK_MINUTES = [5, 15, 30, 60]
@@ -35,6 +36,8 @@ export const TodoPage: React.FC = () => {
   const [reminderError, setReminderError] = useState('')
   const [floatingEnabled, setFloatingEnabled] = useState(false)
   const [ballImage, setBallImage] = useState<string | null>(null)
+  const [ballSize, setBallSize] = useState(56)
+  const [ballShape, setBallShape] = useState<'circle' | 'square'>('circle')
   const [uploadingBallImage, setUploadingBallImage] = useState(false)
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -69,6 +72,8 @@ export const TodoPage: React.FC = () => {
         setReminders(reminderList)
         setFloatingEnabled(floating)
         setBallImage(profile.todo_floating_ball_image ?? null)
+        setBallSize(profile.todo_ball_size || 56)
+        setBallShape(profile.todo_ball_shape === 'square' ? 'square' : 'circle')
       } catch (err) {
         console.error('Failed to load todo page data:', err)
       } finally {
@@ -174,6 +179,20 @@ export const TodoPage: React.FC = () => {
     }
   }
 
+  const handleBallSizeChange = (size: number) => {
+    setBallSize(size)
+    api.updateProfile({ todo_ball_size: size }).catch((err) => {
+      console.error('Failed to save todo ball size:', err)
+    })
+  }
+
+  const handleBallShapeChange = (shape: 'circle' | 'square') => {
+    setBallShape(shape)
+    api.updateProfile({ todo_ball_shape: shape }).catch((err) => {
+      console.error('Failed to save todo ball shape:', err)
+    })
+  }
+
   const handleAddReminder = async (e?: React.FormEvent) => {
     e?.preventDefault()
     const title = reminderTitle.trim()
@@ -263,6 +282,38 @@ export const TodoPage: React.FC = () => {
               <ImagePlus className="w-4 h-4" />
               上传
             </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+          <Slider
+            label="悬浮球大小"
+            value={ballSize}
+            onChange={handleBallSizeChange}
+            min={40}
+            max={140}
+            step={4}
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-white">悬浮球形状</span>
+            <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+              {(['circle', 'square'] as const).map((shape) => (
+                <button
+                  key={shape}
+                  onClick={() => handleBallShapeChange(shape)}
+                  className={`
+                    px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
+                    ${
+                      ballShape === shape
+                        ? 'bg-primary/20 text-primary'
+                        : 'text-text-secondary hover:text-white hover:bg-white/5'
+                    }
+                  `}
+                >
+                  {shape === 'circle' ? '圆形' : '方形'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </Card>

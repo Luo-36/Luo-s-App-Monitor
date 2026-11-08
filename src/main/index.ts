@@ -175,6 +175,7 @@ function setup(): void {
     }
     if (profile) {
       floatingBall.setBallImage(profile.pomodoro_floating_ball_image)
+      floatingBall.setBallMetrics(profile.pomodoro_ball_size, profile.pomodoro_ball_shape)
     }
   } catch (err) {
     console.error('Failed to sync floating ball state from profile:', err)
@@ -193,6 +194,7 @@ function setup(): void {
     const profile = getUserProfile()
     if (profile) {
       todoFloating.setBallImage(profile.todo_floating_ball_image)
+      todoFloating.setBallMetrics(profile.todo_ball_size, profile.todo_ball_shape)
       if (profile.todo_floating_enabled) {
         todoFloating.setEnabled(true, profile.theme_color)
       }

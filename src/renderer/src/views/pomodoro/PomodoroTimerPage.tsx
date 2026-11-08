@@ -16,6 +16,7 @@ import { usePomodoroStore } from '@/store/usePomodoroStore'
 import Card from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import Switch from '@/components/ui/Switch'
+import Slider from '@/components/ui/Slider'
 import Input from '@/components/ui/Input'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
@@ -54,6 +55,8 @@ export const PomodoroTimerPage: React.FC = () => {
   const [customConfig, setCustomConfig] = useState<PomodoroConfig>(presets.default.config)
   const [showCustom, setShowCustom] = useState(false)
   const [ballImage, setBallImage] = useState<string | null>(null)
+  const [ballSize, setBallSize] = useState(72)
+  const [ballShape, setBallShape] = useState<'circle' | 'square'>('circle')
   const [uploadingBallImage, setUploadingBallImage] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -85,6 +88,8 @@ export const PomodoroTimerPage: React.FC = () => {
         }
         setCustomConfig(customCfg)
         setBallImage(profile.pomodoro_floating_ball_image ?? null)
+        setBallSize(profile.pomodoro_ball_size || 72)
+        setBallShape(profile.pomodoro_ball_shape === 'square' ? 'square' : 'circle')
       } catch (err) {
         console.error('Failed to load pomodoro state:', err)
       } finally {
@@ -199,6 +204,20 @@ export const PomodoroTimerPage: React.FC = () => {
     } catch (err) {
       console.error('Failed to clear floating ball image:', err)
     }
+  }
+
+  const handleBallSizeChange = (size: number) => {
+    setBallSize(size)
+    api.updateProfile({ pomodoro_ball_size: size }).catch((err) => {
+      console.error('Failed to save floating ball size:', err)
+    })
+  }
+
+  const handleBallShapeChange = (shape: 'circle' | 'square') => {
+    setBallShape(shape)
+    api.updateProfile({ pomodoro_ball_shape: shape }).catch((err) => {
+      console.error('Failed to save floating ball shape:', err)
+    })
   }
 
   if (loading) {
@@ -378,6 +397,38 @@ export const PomodoroTimerPage: React.FC = () => {
                   <ImagePlus className="w-4 h-4" />
                   上传
                 </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-white/5 space-y-3">
+            <Slider
+              label="悬浮球大小"
+              value={ballSize}
+              onChange={handleBallSizeChange}
+              min={48}
+              max={140}
+              step={4}
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white">悬浮球形状</span>
+              <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                {(['circle', 'square'] as const).map((shape) => (
+                  <button
+                    key={shape}
+                    onClick={() => handleBallShapeChange(shape)}
+                    className={`
+                      px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
+                      ${
+                        ballShape === shape
+                          ? 'bg-primary/20 text-primary'
+                          : 'text-text-secondary hover:text-white hover:bg-white/5'
+                      }
+                    `}
+                  >
+                    {shape === 'circle' ? '圆形' : '方形'}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

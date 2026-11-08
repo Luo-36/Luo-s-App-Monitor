@@ -29,6 +29,8 @@ export class FloatingBallWindow {
   private lastState: PomodoroState | null = null
   private ballColor: string = '#B8B0A0' // Default taupe
   private ballImageDataUrl: string | null = null
+  private ballSize: number = 72
+  private ballShape: 'circle' | 'square' = 'circle'
 
   constructor() {
     this.registerIpcHandlers()
@@ -64,11 +66,56 @@ export class FloatingBallWindow {
     this.sendAppearance()
   }
 
+  /**
+   * Updates the ball size (px) and shape. The window is resized so the ball
+   * and its hover tooltip always have enough room.
+   */
+  setBallMetrics(size: number | undefined, shape: string | undefined): void {
+    const nextSize = Number(size)
+    if (Number.isFinite(nextSize)) {
+      this.ballSize = Math.min(160, Math.max(48, Math.round(nextSize)))
+    }
+    this.ballShape = shape === 'square' ? 'square' : 'circle'
+
+    this.applyWindowMetrics()
+    this.sendAppearance()
+  }
+
+  /** Window dimensions needed for the ball plus the tooltip below it. */
+  private getWindowSize(): { width: number; height: number } {
+    return {
+      // Keep enough width for the tooltip text ("长休息 · 25:00") to be
+      // displayed in full instead of being ellipsized.
+      width: Math.max(this.ballSize + 40, 160),
+      height: this.ballSize + 52
+    }
+  }
+
+  private applyWindowMetrics(): void {
+    if (!this.window || this.window.isDestroyed()) return
+    const [x, y] = this.window.getPosition()
+    const [oldWidth, oldHeight] = this.window.getSize()
+    const { width, height } = this.getWindowSize()
+
+    // Keep the bottom-right corner anchored so the ball stays near the screen
+    // corner while the size slider is being dragged.
+    this.window.setBounds({
+      x: x + oldWidth - width,
+      y: y + oldHeight - height,
+      width,
+      height
+    })
+  }
+
   private sendAppearance(): void {
     if (!this.window || this.window.isDestroyed()) return
     try {
       this.window.webContents.send('fb:color', this.ballColor)
       this.window.webContents.send('fb:image', this.ballImageDataUrl)
+      this.window.webContents.send('fb:metrics', {
+        size: this.ballSize,
+        shape: this.ballShape
+      })
     } catch { /* window may be closing */ }
   }
 
@@ -128,10 +175,10 @@ export class FloatingBallWindow {
 
   create(): void {
     if (this.window && !this.window.isDestroyed()) return
+    const { width, height } = this.getWindowSize()
     this.window = new BrowserWindow({
-      // Extra height (and a little width) leaves room for the hover tooltip,
-      // which used to be clipped by a 90×90 window.
-      width: 100, height: 112,
+      // Room for the ball plus the hover tooltip below it.
+      width, height,
       frame: false, transparent: true, alwaysOnTop: true,
       resizable: false, skipTaskbar: true, hasShadow: false,
       show: false,
@@ -144,9 +191,11 @@ export class FloatingBallWindow {
       this.sendAppearance()
       if (this.lastState) this.sendTick(this.lastState)
     })
-    const primaryDisplay = screen.getPrimaryDisplay()
-    const { width, height } = primaryDisplay.workAreaSize
-    this.window.setPosition(width - 110, height - 120)
+    const { workArea } = screen.getPrimaryDisplay()
+    this.window.setPosition(
+      workArea.x + workArea.width - width - 10,
+      workArea.y + workArea.height - height - 8
+    )
   }
 
   private registerIpcHandlers(): void {
@@ -174,9 +223,10 @@ export class FloatingBallWindow {
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
 body{display:flex;align-items:flex-start;justify-content:center;padding-top:4px;}
-#stack{display:flex;flex-direction:column;align-items:center;gap:4px;}
+#stack{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;}
 #ball{
-  width:72px;height:72px;border-radius:50%;
+  width:var(--ball-size,72px);height:var(--ball-size,72px);
+  border-radius:var(--ball-radius,50%);
   display:flex;align-items:center;justify-content:center;
   cursor:grab;position:relative;flex-shrink:0;
   transition:transform 0.1s;
@@ -184,12 +234,11 @@ body{display:flex;align-items:flex-start;justify-content:center;padding-top:4px;
 }
 #ball:active{cursor:grabbing;transform:scale(1.1);}
 #time{
-  font-family:monospace;font-size:16px;font-weight:700;
+  font-family:monospace;font-size:var(--ball-font,16px);font-weight:700;
   color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.5);
   pointer-events:none;
 }
 #tooltip{
-  max-width:92px;overflow:hidden;text-overflow:ellipsis;
   background:rgba(0,0,0,0.8);color:#fff;font-size:11px;line-height:1.4;
   padding:3px 8px;border-radius:6px;white-space:nowrap;
   opacity:0;transition:opacity 0.15s;pointer-events:none;
@@ -221,6 +270,15 @@ function applyAppearance(){
 ipc.on('fb:color',function(e,c){baseColor=c;applyAppearance();});
 // Receive custom background image (supports transparent PNG)
 ipc.on('fb:image',function(e,dataUrl){ballImage=dataUrl||null;applyAppearance();});
+// Receive size / shape
+ipc.on('fb:metrics',function(e,m){
+  if(!m) return;
+  var size=Math.max(48,Math.min(160,Number(m.size)||72));
+  var radius=m.shape==='square'?Math.max(8,Math.round(size*0.16))+'px':'50%';
+  document.documentElement.style.setProperty('--ball-size',size+'px');
+  document.documentElement.style.setProperty('--ball-radius',radius);
+  document.documentElement.style.setProperty('--ball-font',Math.max(12,Math.round(size*0.22))+'px');
+});
 // Receive timer state
 ipc.on('fb:tick',function(e,s){
   var m=Math.floor(s.remainingSeconds/60);

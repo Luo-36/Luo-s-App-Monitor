@@ -113,6 +113,12 @@ export interface UserProfile {
   auto_start: number
   todo_floating_enabled: number
   todo_floating_ball_image: string | null
+  pomodoro_ball_size: number
+  /** 'circle' | 'square' */
+  pomodoro_ball_shape: string
+  todo_ball_size: number
+  /** 'circle' | 'square' */
+  todo_ball_shape: string
 }
 
 // ====== Todo / Reminder Types ======

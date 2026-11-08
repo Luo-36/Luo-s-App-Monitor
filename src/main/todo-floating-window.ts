@@ -12,7 +12,9 @@ const themeColors: Record<string, string> = {
 
 const PANEL_WIDTH = 300
 const PANEL_HEIGHT = 400
-const BALL_SIZE = 64
+const DEFAULT_BALL_SIZE = 56
+/** Extra window space around the ball so its badge is never clipped. */
+const BALL_MARGIN = 8
 
 /**
  * A small always-on-top sticky-notes style window that shows the todo list.
@@ -30,6 +32,9 @@ export class TodoFloatingWindow {
   private enabled: boolean = false
   private accentColor: string = '#B8B0A0'
   private ballImageDataUrl: string | null = null
+  private ballSize: number = DEFAULT_BALL_SIZE
+  private ballShape: 'circle' | 'square' = 'circle'
+  private mode: 'panel' | 'ball' = 'panel'
 
   constructor() {
     this.registerDragHandlers()
@@ -63,6 +68,18 @@ export class TodoFloatingWindow {
    */
   setBallImage(imagePath: string | null | undefined): void {
     this.ballImageDataUrl = readImageAsDataUrl(imagePath)
+    this.sendAppearance()
+  }
+
+  /** Updates the collapsed ball's size (px) and circle/square shape. */
+  setBallMetrics(size: number | undefined, shape: string | undefined): void {
+    const nextSize = Number(size)
+    if (Number.isFinite(nextSize)) {
+      this.ballSize = Math.min(140, Math.max(40, Math.round(nextSize)))
+    }
+    this.ballShape = shape === 'square' ? 'square' : 'circle'
+
+    this.resizeForCurrentMode()
     this.sendAppearance()
   }
 
@@ -112,7 +129,23 @@ export class TodoFloatingWindow {
     try {
       this.window.webContents.send('todo:win:theme', this.accentColor)
       this.window.webContents.send('todo:win:image', this.ballImageDataUrl)
+      this.window.webContents.send('todo:win:metrics', {
+        size: this.ballSize,
+        shape: this.ballShape
+      })
     } catch { /* window may be closing */ }
+  }
+
+  /** Resizes the window to match the current panel/ball mode. */
+  private resizeForCurrentMode(): void {
+    if (!this.window || this.window.isDestroyed()) return
+    const [x, y] = this.window.getPosition()
+    if (this.mode === 'ball') {
+      const size = this.ballSize + BALL_MARGIN
+      this.window.setBounds({ x, y, width: size, height: size })
+    } else {
+      this.window.setBounds({ x, y, width: PANEL_WIDTH, height: PANEL_HEIGHT })
+    }
   }
 
   private create(): void {
@@ -174,12 +207,11 @@ export class TodoFloatingWindow {
 
     // Collapse into / expand from the floating ball
     ipcMain.on('todo:win:resize', (_event, mode: 'ball' | 'panel') => {
-      if (!this.window || this.window.isDestroyed()) return
-      const [x, y] = this.window.getPosition()
-      if (mode === 'ball') {
-        this.window.setBounds({ x, y, width: BALL_SIZE, height: BALL_SIZE })
-      } else {
-        this.window.setBounds({ x, y, width: PANEL_WIDTH, height: PANEL_HEIGHT })
+      this.mode = mode === 'ball' ? 'ball' : 'panel'
+      this.resizeForCurrentMode()
+      if (this.mode === 'ball') {
+        // Re-send metrics: the ball page might have just been resized.
+        this.sendAppearance()
       }
     })
   }
@@ -256,7 +288,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
   display:none;width:100%;height:100%;align-items:center;justify-content:center;
 }
 #ball{
-  width:56px;height:56px;border-radius:50%;position:relative;cursor:grab;
+  width:var(--ball-size,56px);height:var(--ball-size,56px);
+  border-radius:var(--ball-radius,50%);position:relative;cursor:grab;
   background:var(--accent);
   background-size:cover;background-position:center;background-repeat:no-repeat;
   display:flex;align-items:center;justify-content:center;
@@ -416,6 +449,18 @@ ipc.on('todo:win:theme', function (e, color) {
 ipc.on('todo:win:image', function (e, dataUrl) {
   ballImage = dataUrl || null;
   applyBallAppearance();
+});
+
+// Size / shape of the collapsed ball
+ipc.on('todo:win:metrics', function (e, m) {
+  if (!m) return;
+  var size = Math.max(40, Math.min(140, Number(m.size) || 56));
+  var radius = m.shape === 'square' ? Math.max(8, Math.round(size * 0.18)) + 'px' : '50%';
+  document.documentElement.style.setProperty('--ball-size', size + 'px');
+  document.documentElement.style.setProperty('--ball-radius', radius);
+  var iconSize = Math.round(size * 0.36);
+  ballIcon.setAttribute('width', iconSize);
+  ballIcon.setAttribute('height', iconSize);
 });
 
 // Drag the window by its header (panel) or the ball itself

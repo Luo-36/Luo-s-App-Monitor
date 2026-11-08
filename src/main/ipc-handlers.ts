@@ -291,6 +291,12 @@ export function registerIpcHandlers(
       if (todoWindow && 'todo_floating_ball_image' in data) {
         todoWindow.setBallImage(data.todo_floating_ball_image)
       }
+      if (floatingBall && ('pomodoro_ball_size' in data || 'pomodoro_ball_shape' in data)) {
+        floatingBall.setBallMetrics(result.pomodoro_ball_size, result.pomodoro_ball_shape)
+      }
+      if (todoWindow && ('todo_ball_size' in data || 'todo_ball_shape' in data)) {
+        todoWindow.setBallMetrics(result.todo_ball_size, result.todo_ball_shape)
+      }
       if (floatingBall && data.floating_ball_color !== undefined) {
         floatingBall.setThemeColor(data.floating_ball_color)
       } else if (floatingBall && data.theme_color !== undefined) {

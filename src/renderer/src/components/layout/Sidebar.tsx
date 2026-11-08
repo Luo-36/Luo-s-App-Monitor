@@ -143,7 +143,7 @@ export const Sidebar: React.FC = () => {
       {/* Version */}
       {!sidebarCollapsed && (
         <div className="px-4 py-3 border-t border-white/5">
-          <span className="text-xs text-text-secondary/50">v1.1.0</span>
+          <span className="text-xs text-text-secondary/50">v1.2.0</span>
         </div>
       )}
     </aside>
