@@ -76,7 +76,7 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
       {
         label: '使用时长 (分钟)',
         data: values,
-        backgroundColor: `rgba(${primaryRgb}, 0.7)`,
+        backgroundColor: `rgba(${primaryRgb}, 0.78)`,
         borderColor: `rgb(${primaryRgb})`,
         borderWidth: 1,
         borderRadius: 4,
@@ -103,7 +103,7 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
         borderWidth: 1,
         padding: 12,
         callbacks: {
-          label: (context: { raw: number }) => {
+          label: (context: any) => {
             const entry = sortedData[context.dataIndex]
             return formatDuration(entry?.total_seconds || 0)
           }
@@ -114,6 +114,13 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
       x: {
         grid: {
           color: 'rgba(148, 163, 184, 0.1)'
+        },
+        title: {
+          display: true,
+          text: '分钟',
+          color: 'rgb(148, 163, 184)',
+          font: { size: 11 },
+          padding: { top: 4 }
         },
         ticks: {
           color: 'rgb(148, 163, 184)',
@@ -130,6 +137,15 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
           font: { size: 12 },
           autoSkip: false
         }
+      }
+    },
+    onHover: (
+      event: { native: Event | null },
+      elements: { datasetIndex: number; index: number }[]
+    ) => {
+      const target = event.native?.target as HTMLElement | null
+      if (target) {
+        target.style.cursor = elements.length > 0 && onBarClick ? 'pointer' : 'default'
       }
     },
     onClick: (_: unknown, elements: { datasetIndex: number; index: number }[]) => {
@@ -151,13 +167,13 @@ export const HorizontalBarChart: React.FC<HorizontalBarChartProps> = ({
 
   // Give every category a fixed row height. With a fixed 256px container the
   // rows would compress into unreadable slivers once a user has many programs.
-  const chartHeight = Math.max(256, sortedData.length * 42 + 16)
+  const chartHeight = Math.max(220, sortedData.length * 42 + 16)
 
+  // No inner scroll container: the page itself scrolls, so the wheel can't
+  // get trapped inside a nested chart viewport.
   return (
-    <div className="w-full max-h-[70vh] overflow-y-auto overflow-x-hidden pr-1">
-      <div style={{ height: chartHeight }}>
-        <Bar data={chartData} options={options} />
-      </div>
+    <div className="w-full" style={{ height: chartHeight }}>
+      <Bar data={chartData} options={options} />
     </div>
   )
 }

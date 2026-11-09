@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Bell, X } from 'lucide-react'
 import Sidebar from './Sidebar'
-import BackgroundLayer from '@/components/background/BackgroundLayer'
 import { api } from '@/api/bridge'
 
 export const AppShell: React.FC = () => {
@@ -22,8 +21,7 @@ export const AppShell: React.FC = () => {
   }, [toastTitle])
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
-      <BackgroundLayer />
+    <div className="relative z-10 flex h-screen w-screen overflow-hidden">
       <Sidebar />
       <main className="flex-1 overflow-y-auto relative bg-slate-900/20">
         <Outlet />

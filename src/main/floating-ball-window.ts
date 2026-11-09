@@ -222,28 +222,46 @@ export class FloatingBallWindow {
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
-body{display:flex;align-items:flex-start;justify-content:center;padding-top:4px;}
-#stack{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;}
+body{
+  display:flex;align-items:flex-start;justify-content:center;padding-top:4px;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;
+}
+#stack{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;}
 #ball{
   width:var(--ball-size,72px);height:var(--ball-size,72px);
   border-radius:var(--ball-radius,50%);
   display:flex;align-items:center;justify-content:center;
   cursor:grab;position:relative;flex-shrink:0;
-  transition:transform 0.1s;
+  transition:transform 0.16s ease, box-shadow 0.16s ease;
   background-size:cover;background-position:center;background-repeat:no-repeat;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -6px 14px rgba(0,0,0,0.16);
 }
-#ball:active{cursor:grabbing;transform:scale(1.1);}
+#ball.has-image{box-shadow:none;}
+#ball:hover{transform:scale(1.04);}
+#ball:active{cursor:grabbing;transform:scale(1.08);}
 #time{
-  font-family:monospace;font-size:var(--ball-font,16px);font-weight:700;
-  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.5);
+  font-size:var(--ball-font,16px);font-weight:700;font-variant-numeric:tabular-nums;
+  color:#fff;letter-spacing:0.02em;text-shadow:0 1px 3px rgba(0,0,0,0.45);
   pointer-events:none;
 }
 #tooltip{
-  background:rgba(0,0,0,0.8);color:#fff;font-size:11px;line-height:1.4;
-  padding:3px 8px;border-radius:6px;white-space:nowrap;
-  opacity:0;transition:opacity 0.15s;pointer-events:none;
+  position:relative;
+  background:rgba(15,23,42,0.96);color:#F8FAFC;font-size:11px;line-height:1.4;
+  padding:4px 10px;border-radius:10px;white-space:nowrap;
+  border:1px solid rgba(255,255,255,0.10);
+  box-shadow:0 6px 16px rgba(0,0,0,0.30);
+  opacity:0;transform:translateY(-2px);
+  transition:opacity 0.16s ease, transform 0.16s ease;
+  pointer-events:none;
 }
-#ball:hover ~ #tooltip{opacity:1;}
+#tooltip::after{
+  content:'';position:absolute;top:-4px;left:50%;width:8px;height:8px;
+  background:rgba(15,23,42,0.96);
+  border-left:1px solid rgba(255,255,255,0.10);
+  border-top:1px solid rgba(255,255,255,0.10);
+  transform:translateX(-50%) rotate(45deg);border-radius:1px;
+}
+#ball:hover ~ #tooltip{opacity:1;transform:translateY(0);}
 </style></head><body>
 <div id="stack">
   <div id="ball"><span id="time">25:00</span></div>
@@ -261,9 +279,11 @@ function applyAppearance(){
   if(ballImage){
     ballEl.style.backgroundImage='url('+ballImage+')';
     ballEl.style.backgroundColor='transparent';
+    ballEl.classList.add('has-image');
   }else{
     ballEl.style.backgroundImage='none';
     ballEl.style.backgroundColor=baseColor;
+    ballEl.classList.remove('has-image');
   }
 }
 // Receive theme color

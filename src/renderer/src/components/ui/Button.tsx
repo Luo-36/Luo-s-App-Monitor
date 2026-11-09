@@ -12,8 +12,10 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
+  // The app's theme colours are all light pastels — dark text keeps the
+  // contrast around 8:1 instead of the ~2:1 white-on-pastel produced before.
   primary:
-    'bg-primary text-white hover:brightness-110 active:brightness-90 shadow-lg shadow-primary/25',
+    'bg-primary text-slate-900 hover:brightness-105 active:brightness-95 shadow-lg shadow-primary/20',
   secondary:
     'bg-white/10 text-white hover:bg-white/20 active:bg-white/15 border border-white/10',
   ghost:

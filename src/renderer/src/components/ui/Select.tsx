@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 interface SelectOption {
@@ -21,15 +21,21 @@ export const Select: React.FC<SelectProps> = ({
   options,
   className = ''
 }) => {
+  const id = useId()
+
   return (
     <div className={`space-y-1.5 ${className}`}>
       {label && (
-        <label className="block text-sm font-medium text-text-secondary">
+        <label
+          htmlFor={id}
+          className="block text-sm font-medium text-text-secondary"
+        >
           {label}
         </label>
       )}
       <div className="relative">
         <select
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="

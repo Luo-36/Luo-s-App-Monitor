@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 
 interface InputProps {
   label?: string
@@ -8,6 +8,7 @@ interface InputProps {
   type?: string
   error?: string
   icon?: React.ReactNode
+  maxLength?: number
   className?: string
 }
 
@@ -19,24 +20,32 @@ export const Input: React.FC<InputProps> = ({
   type = 'text',
   error,
   icon,
+  maxLength,
   className = ''
 }) => {
+  const id = useId()
+
   return (
     <div className={`space-y-1.5 ${className}`}>
       {label && (
-        <label className="block text-sm font-medium text-text-secondary">
+        <label
+          htmlFor={id}
+          className="block text-sm font-medium text-text-secondary"
+        >
           {label}
         </label>
       )}
       <div className="relative">
         {icon && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none">
             {icon}
           </div>
         )}
         <input
+          id={id}
           type={type}
           value={value}
+          maxLength={maxLength}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={`

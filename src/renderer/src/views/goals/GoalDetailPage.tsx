@@ -151,10 +151,11 @@ export const GoalDetailPage: React.FC = () => {
         <div className="absolute top-4 left-4">
           <span
             className={`
-              inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+              inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+              backdrop-blur-md shadow-md shadow-black/20 border
               ${isRestriction
-                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'bg-primary/20 text-primary border border-primary/30'
+                ? 'bg-amber-400/95 text-slate-900 border-amber-200/50'
+                : 'bg-primary/95 text-slate-900 border-white/40'
               }
             `}
           >

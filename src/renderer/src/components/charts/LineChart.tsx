@@ -117,8 +117,7 @@ export const LineChart: React.FC<LineChartProps> = ({ data, onPointClick }) => {
         borderWidth: 1,
         padding: 12,
         callbacks: {
-          label: (context: { raw: number }) =>
-            `${formatTick(context.raw)} 小时`
+          label: (context: any) => `${formatTick(context.raw)} 小时`
         }
       }
     },

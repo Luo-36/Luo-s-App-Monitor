@@ -1,7 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { Palette, Image, Monitor, ZoomIn } from 'lucide-react'
+import {
+  Palette,
+  Image,
+  Monitor,
+  ZoomIn,
+  Download,
+  Upload,
+  Trash2,
+  RotateCcw,
+  Database
+} from 'lucide-react'
 import { api } from '@/api/bridge'
 import { useThemeStore } from '@/store/useThemeStore'
+import { toast } from '@/store/useToastStore'
+import { confirmDialog } from '@/store/useConfirmStore'
 import { toFileUrl } from '@/utils/fileUrl'
 import Card from '@/components/ui/Card'
 import Switch from '@/components/ui/Switch'
@@ -37,20 +49,18 @@ export const SettingsPage: React.FC = () => {
   const [localAutoStart, setLocalAutoStart] = useState(false)
   const [localGuiScale, setLocalGuiScale] = useState(DEFAULT_GUI_SCALE)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState('')
-  const messageTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const initialBackgroundRef = useRef<string | null>(null)
   const [cropImageSrc, setCropImageSrc] = useState('')
   const [cropping, setCropping] = useState(false)
+  const [pendingCropPath, setPendingCropPath] = useState<string | null>(null)
+  const dimSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scaleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
         const profile = await api.getProfile()
-        // Normalize theme color: if the DB contains an invalid value (e.g. old hex color),
-        // fall back to 'taupe'
+        // Normalize theme color: if the DB contains an invalid value, fall back.
         const keys = knownThemeKeys as readonly string[]
         setLocalThemeColor(
           keys.includes(profile.theme_color) ? profile.theme_color : DEFAULT_THEME_COLOR
@@ -61,12 +71,12 @@ export const SettingsPage: React.FC = () => {
         setLocalBackgroundImage(profile.background_image_path)
         setLocalDimLevel(profile.background_dim ?? 0.35)
         setLocalGuiScale(profile.gui_scale ?? DEFAULT_GUI_SCALE)
-        initialBackgroundRef.current = profile.background_image_path
 
         const auto = await api.getAutoStart()
         setLocalAutoStart(auto)
       } catch (err) {
         console.error('Failed to load settings:', err)
+        toast.error('读取设置失败')
       } finally {
         setLoading(false)
       }
@@ -74,139 +84,74 @@ export const SettingsPage: React.FC = () => {
     load()
   }, [])
 
-  const showMessage = (msg: string) => {
-    setSaveMessage(msg)
-    if (messageTimerRef.current) clearTimeout(messageTimerRef.current)
-    messageTimerRef.current = setTimeout(() => setSaveMessage(''), 3000)
+  /** Apply the GUI scale via Electron page zoom (keeps viewport layout sane). */
+  const applyGuiScale = (scale: number) => {
+    api.setZoomFactor(scale / 100)
   }
 
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      // Step 1: Handle background image copy
-      let bgPath = localBackgroundImage
-      const bgChanged = localBackgroundImage !== initialBackgroundRef.current
-      if (
-        bgChanged &&
-        localBackgroundImage &&
-        !localBackgroundImage.startsWith('data:') &&
-        !localBackgroundImage.startsWith('http://') &&
-        !localBackgroundImage.startsWith('https://') &&
-        !localBackgroundImage.startsWith('file://')
-      ) {
-        try {
-          const savedPath = await api.saveBackgroundImage(localBackgroundImage)
-          if (savedPath) {
-            bgPath = savedPath
-          }
-        } catch (err) {
-          console.error('Failed to copy background image:', err)
-          showMessage('背景图片复制失败，请重试')
-          return
-        }
-      }
-
-      // Step 2: Apply theme color (sets solid background color via ThemeProvider)
-      theme.setThemeColor(localThemeColor as typeof themeColors[number]['key'])
-
-      // Step 3: Apply background image and dim level
-      theme.setBackgroundImage(bgPath)
-      theme.setDimLevel(localDimLevel)
-
-      // Step 4: Apply GUI scale via root font-size (scales rem-based sizes)
-      document.documentElement.style.fontSize = `${16 * (localGuiScale / 100)}px`
-
-      // Step 5: Persist to database
-      try {
-        await api.updateProfile({
-          theme_color: localThemeColor,
-          floating_ball_color: localFloatingBallColor,
-          background_image_path: bgPath,
-          background_dim: localDimLevel,
-          gui_scale: localGuiScale,
-          auto_start: localAutoStart ? 1 : 0
-        })
-      } catch (err) {
-        console.error('Failed to persist profile:', err)
-        showMessage('保存到数据库失败，请重试')
-        return
-      }
-
-      // Step 6: Persist auto-start setting
-      try {
-        await api.setAutoStart(localAutoStart)
-      } catch (err) {
-        console.error('Failed to set auto-start:', err)
-        showMessage('开机自启设置失败')
-        return
-      }
-
-      // Update local state with the persisted background path
-      if (bgPath !== localBackgroundImage) {
-        setLocalBackgroundImage(bgPath)
-        initialBackgroundRef.current = bgPath
-      }
-
-      showMessage('设置已保存')
-    } catch (err) {
-      console.error('Unexpected error saving settings:', err)
-      showMessage('保存失败，请重试')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleReset = () => {
-    const confirmed = window.confirm('确定要恢复默认设置吗？当前未保存的更改将丢失。')
-    if (!confirmed) return
-
-    setLocalThemeColor(DEFAULT_THEME_COLOR)
-    setLocalFloatingBallColor(DEFAULT_THEME_COLOR)
-    setLocalBackgroundImage(DEFAULT_BACKGROUND_IMAGE)
-    setLocalDimLevel(DEFAULT_DIM_LEVEL)
-    setLocalAutoStart(DEFAULT_AUTO_START)
-    setLocalGuiScale(DEFAULT_GUI_SCALE)
-    showMessage('已恢复默认设置，请点击"保存设置"以生效')
-  }
-
-  const handleExport = async () => {
-    try {
-      const path = await api.exportData()
-      if (path) showMessage(`已导出到 ${path}`)
-    } catch (err) {
-      console.error('Failed to export data:', err)
-      showMessage('导出失败，请重试')
-    }
-  }
-
-  const handleImport = async () => {
-    if (!window.confirm('导入将覆盖当前所有数据（程序、目标、使用记录等），且不可撤销。确定继续吗？')) {
-      return
-    }
-    try {
-      const ok = await api.importData()
-      if (ok) showMessage('数据导入成功，请重启应用以完全生效')
-    } catch (err) {
-      console.error('Failed to import data:', err)
-      showMessage('导入失败：备份文件格式无效')
-    }
-  }
-
+  // Simple appearance choices apply and save immediately, so navigating away
+  // can never leave the app thinking a different theme than the database.
   const handleThemeChange = (colorKey: string) => {
     setLocalThemeColor(colorKey)
-    // Theme IS the background — selecting a theme clears the background image
-    setLocalBackgroundImage(null)
+    theme.setThemeColor(colorKey)
+    api.updateProfile({ theme_color: colorKey }).catch((err) => {
+      console.error('Failed to persist theme color:', err)
+    })
   }
 
   const handleFloatingBallColorChange = (colorKey: string) => {
     setLocalFloatingBallColor(colorKey)
+    api.updateProfile({ floating_ball_color: colorKey }).catch((err) => {
+      console.error('Failed to persist floating ball color:', err)
+    })
   }
 
-  const handleCancelBackground = () => {
+  const handleDimChange = (dim: number) => {
+    setLocalDimLevel(dim)
+    theme.setDimLevel(dim)
+    if (dimSaveTimer.current) clearTimeout(dimSaveTimer.current)
+    dimSaveTimer.current = setTimeout(() => {
+      api.updateProfile({ background_dim: dim }).catch((err) => {
+        console.error('Failed to persist background dim:', err)
+      })
+    }, 300)
+  }
+
+  const handleAutoStartChange = async (enabled: boolean) => {
+    setLocalAutoStart(enabled)
+    try {
+      await api.setAutoStart(enabled)
+      await api.updateProfile({ auto_start: enabled ? 1 : 0 })
+      toast.success(enabled ? '已开启开机自启' : '已关闭开机自启')
+    } catch (err) {
+      console.error('Failed to set auto-start:', err)
+      setLocalAutoStart(!enabled)
+      toast.error('开机自启设置失败')
+    }
+  }
+
+  const handleGuiScaleChange = (scale: number) => {
+    setLocalGuiScale(scale)
+    applyGuiScale(scale)
+    if (scaleSaveTimer.current) clearTimeout(scaleSaveTimer.current)
+    scaleSaveTimer.current = setTimeout(() => {
+      api.updateProfile({ gui_scale: scale }).catch((err) => {
+        console.error('Failed to persist GUI scale:', err)
+      })
+    }, 300)
+  }
+
+  const handleCancelBackground = async () => {
     setLocalBackgroundImage(null)
+    theme.setBackgroundImage(null)
+    try {
+      await api.updateProfile({ background_image_path: null })
+      toast.success('已移除背景图')
+    } catch (err) {
+      console.error('Failed to clear background:', err)
+      toast.error('移除背景失败，请重试')
+    }
   }
-
-  const [pendingCropPath, setPendingCropPath] = useState<string | null>(null)
 
   const handleBackgroundUpload = async () => {
     const filePath = await api.openFileDialog([
@@ -214,7 +159,6 @@ export const SettingsPage: React.FC = () => {
     ])
     if (!filePath) return
 
-    // Save original image first, then offer cropping
     const dataUrl = await api.readFileAsBase64(filePath)
     if (!dataUrl) return
     const savedPath = await api.saveImage(dataUrl, 'background', `bg_${Date.now()}.png`)
@@ -227,7 +171,7 @@ export const SettingsPage: React.FC = () => {
   const handleCropComplete = async (cropData: CropData) => {
     try {
       const srcPath = pendingCropPath
-      if (!srcPath) { console.error('[Settings] No pending crop path'); return }
+      if (!srcPath) return
 
       const outName = `bg_cropped_${Date.now()}`
       const result = await api.cropImage(
@@ -238,27 +182,101 @@ export const SettingsPage: React.FC = () => {
 
       if (result) {
         setLocalBackgroundImage(result)
+        theme.setBackgroundImage(result)
+        await api.updateProfile({ background_image_path: result })
+        toast.success('背景图已更新')
       } else {
-        console.error('[Settings] Crop returned null')
+        toast.error('背景裁剪失败，请重试')
       }
       setCropping(false)
       setCropImageSrc('')
       setPendingCropPath(null)
     } catch (err) {
       console.error('[Settings] Crop failed:', err)
+      toast.error('背景裁剪失败，请重试')
     }
   }
 
-  const handleDimChange = (dim: number) => {
-    setLocalDimLevel(dim)
+  const handleReset = async () => {
+    const ok = await confirmDialog({
+      title: '恢复默认设置',
+      message: '主题、背景、缩放与开机自启都会恢复为默认值。此操作会立即生效。',
+      confirmLabel: '恢复默认'
+    })
+    if (!ok) return
+
+    setLocalThemeColor(DEFAULT_THEME_COLOR)
+    setLocalFloatingBallColor(DEFAULT_THEME_COLOR)
+    setLocalBackgroundImage(DEFAULT_BACKGROUND_IMAGE)
+    setLocalDimLevel(DEFAULT_DIM_LEVEL)
+    setLocalAutoStart(DEFAULT_AUTO_START)
+    setLocalGuiScale(DEFAULT_GUI_SCALE)
+
+    theme.setThemeColor(DEFAULT_THEME_COLOR)
+    theme.setBackgroundImage(DEFAULT_BACKGROUND_IMAGE)
+    theme.setDimLevel(DEFAULT_DIM_LEVEL)
+    applyGuiScale(DEFAULT_GUI_SCALE)
+
+    try {
+      await api.updateProfile({
+        theme_color: DEFAULT_THEME_COLOR,
+        floating_ball_color: DEFAULT_THEME_COLOR,
+        background_image_path: null,
+        background_dim: DEFAULT_DIM_LEVEL,
+        gui_scale: DEFAULT_GUI_SCALE,
+        auto_start: 0
+      })
+      await api.setAutoStart(DEFAULT_AUTO_START)
+      toast.success('已恢复默认设置')
+    } catch (err) {
+      console.error('Failed to reset settings:', err)
+      toast.error('恢复默认失败，请重试')
+    }
   }
 
-  const handleAutoStartChange = (enabled: boolean) => {
-    setLocalAutoStart(enabled)
+  const handleExport = async () => {
+    try {
+      const path = await api.exportData()
+      if (path) toast.success(`已导出到 ${path}`)
+    } catch (err) {
+      console.error('Failed to export data:', err)
+      toast.error('导出失败，请重试')
+    }
   }
 
-  const handleGuiScaleChange = (scale: number) => {
-    setLocalGuiScale(scale)
+  const handleImport = async () => {
+    const ok = await confirmDialog({
+      title: '导入数据',
+      message: '导入将覆盖当前所有数据（程序、目标、使用记录等），且不可撤销。确定继续吗？',
+      confirmLabel: '导入并覆盖',
+      danger: true
+    })
+    if (!ok) return
+    try {
+      const imported = await api.importData()
+      if (imported) toast.success('数据导入成功，请重启应用以完全生效')
+    } catch (err) {
+      console.error('Failed to import data:', err)
+      toast.error('导入失败：备份文件格式无效')
+    }
+  }
+
+  const handleClearData = async () => {
+    const ok = await confirmDialog({
+      title: '清除所有统计数据',
+      message:
+        '这将删除：\n· 所有使用时长记录\n· 所有目标完成记录\n· 所有番茄钟记录\n· 所有爱心\n\n此操作不可撤销！',
+      confirmLabel: '全部清除',
+      danger: true
+    })
+    if (!ok) return
+    try {
+      await api.clearAllData()
+      toast.success('所有统计数据已清除')
+    } catch (err) {
+      console.error('Failed to clear data:', err)
+      toast.error('清除失败，请重试')
+    }
   }
 
   if (loading) {
@@ -269,10 +287,19 @@ export const SettingsPage: React.FC = () => {
     )
   }
 
+  const ballPreviewColor =
+    themeColors.find((item) => item.key === localFloatingBallColor)?.color ??
+    themeColors[0].color
+
   return (
     <div className="p-6 max-w-[700px] mx-auto">
       {/* Header */}
-      <h1 className="text-2xl font-bold text-white mb-6">设置</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">设置</h1>
+        <p className="text-xs text-text-secondary mt-1">
+          主题、悬浮球颜色、遮罩、缩放、背景与开机自启都会即时生效并自动保存。
+        </p>
+      </div>
 
       {/* Theme Color Section */}
       <Card className="p-6 mb-6">
@@ -282,13 +309,16 @@ export const SettingsPage: React.FC = () => {
           </div>
           <h2 className="text-base font-semibold text-white">主题色</h2>
         </div>
-        <p className="text-xs text-text-secondary -mt-3 mb-4">选择主题色后，将作为纯色背景，同时清除背景图片</p>
+        <p className="text-xs text-text-secondary -mt-3 mb-4">
+          主题色用作强调色与纯色底；设置背景图后会覆盖纯色底，二者可以共存。
+        </p>
 
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           {themeColors.map((item) => (
             <button
               key={item.key}
               onClick={() => handleThemeChange(item.key)}
+              aria-pressed={localThemeColor === item.key}
               className="flex flex-col items-center gap-2 group"
               title={item.label}
             >
@@ -322,19 +352,31 @@ export const SettingsPage: React.FC = () => {
 
       {/* Floating Ball Color Section */}
       <Card className="p-6 mb-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center">
-            <Palette className="w-5 h-5 text-primary" />
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center">
+              <Palette className="w-5 h-5 text-primary" />
+            </div>
+            <h2 className="text-base font-semibold text-white">悬浮球色</h2>
           </div>
-          <h2 className="text-base font-semibold text-white">悬浮球色</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-secondary">预览</span>
+            <div
+              className="w-9 h-9 rounded-full border-2 border-white/20 shadow-lg"
+              style={{ backgroundColor: ballPreviewColor }}
+            />
+          </div>
         </div>
-        <p className="text-xs text-text-secondary -mt-3 mb-4">选择番茄钟悬浮球的显示颜色</p>
+        <p className="text-xs text-text-secondary -mt-3 mb-4">
+          选择番茄钟悬浮球的显示颜色（上传了悬浮球背景图时以图片为准）
+        </p>
 
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           {themeColors.map((item) => (
             <button
               key={item.key}
               onClick={() => handleFloatingBallColorChange(item.key)}
+              aria-pressed={localFloatingBallColor === item.key}
               className="flex flex-col items-center gap-2 group"
               title={item.label}
             >
@@ -376,9 +418,14 @@ export const SettingsPage: React.FC = () => {
         </div>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-white">背景图片</span>
-            <div className="flex gap-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <span className="text-sm text-white">背景图片</span>
+              <p className="text-xs text-text-secondary mt-0.5">
+                支持 PNG / JPG，上传后可裁剪并调整遮罩强度
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
               <Button variant="secondary" size="sm" onClick={handleCancelBackground}>
                 取消背景
               </Button>
@@ -395,7 +442,7 @@ export const SettingsPage: React.FC = () => {
                 style={{ backgroundImage: `url(${toFileUrl(localBackgroundImage)})` }}
               />
               <Slider
-                label={`模糊程度 ${Math.round(localDimLevel * 100)}%`}
+                label={`遮罩强度 ${Math.round(localDimLevel * 100)}%`}
                 value={localDimLevel * 100}
                 onChange={(v) => handleDimChange(v / 100)}
                 min={10}
@@ -446,56 +493,41 @@ export const SettingsPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex flex-col items-center gap-3 pt-2 pb-8">
-        {saveMessage && (
-          <p
-            className={`text-sm ${
-              saveMessage.includes('失败') ? 'text-red-400' : 'text-emerald-400'
-            }`}
-          >
-            {saveMessage}
-          </p>
-        )}
-        <Button
-          variant="secondary"
-          onClick={handleReset}
-          className="w-full max-w-xs py-3 text-base"
-        >
-          恢复默认设置
-        </Button>
-        <Button onClick={handleSave} loading={saving} className="w-full max-w-xs py-3 text-base">
-          保存设置
-        </Button>
-        <div className="pt-4 border-t border-white/10 w-full max-w-xs space-y-2">
-          <Button
-            variant="secondary"
-            className="w-full py-2.5 text-sm"
-            onClick={handleExport}
-          >
+      {/* Data Management */}
+      <Card className="p-6 mb-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center">
+            <Database className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-white">数据管理</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              备份、恢复或清理本机数据
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Button variant="secondary" className="w-full" onClick={handleExport}>
+            <Download className="w-4 h-4" />
             导出数据 (JSON)
           </Button>
-          <Button
-            variant="secondary"
-            className="w-full py-2.5 text-sm"
-            onClick={handleImport}
-          >
+          <Button variant="secondary" className="w-full" onClick={handleImport}>
+            <Upload className="w-4 h-4" />
             导入数据
           </Button>
-          <Button
-            variant="danger"
-            className="w-full py-2.5 text-sm"
-            onClick={async () => {
-              if (window.confirm('确定要清除所有统计数据吗？\n\n这将删除：\n· 所有使用时长记录\n· 所有目标完成记录\n· 所有番茄钟记录\n· 所有爱心\n\n此操作不可撤销！')) {
-                await api.clearAllData()
-                showMessage('所有统计数据已清除')
-              }
-            }}
-          >
+          <div className="pt-2 mt-2 border-t border-white/5">
+            <Button variant="secondary" className="w-full" onClick={handleReset}>
+              <RotateCcw className="w-4 h-4" />
+              恢复默认设置
+            </Button>
+          </div>
+          <Button variant="danger" className="w-full" onClick={handleClearData}>
+            <Trash2 className="w-4 h-4" />
             清除所有统计数据
           </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Image Cropper for background */}
       {cropImageSrc && (

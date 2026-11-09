@@ -9,11 +9,15 @@ const scheduledReminders: NodeJS.Timeout[] = []
  */
 const activeNotifications = new Set<Notification>()
 
-/** Optional mirror channel (e.g. the todo floating ball's chat bubble). */
-let chatBubbleListener: ((title: string, body: string) => void) | null = null
+/**
+ * Optional replacement channel (e.g. the todo floating ball's chat bubble).
+ * Returning true means the bubble displayed the notification, in which case
+ * the native system notification is skipped (the two are mutually exclusive).
+ */
+let chatBubbleListener: ((title: string, body: string) => boolean) | null = null
 
 export function setChatBubbleListener(
-  listener: ((title: string, body: string) => void) | null
+  listener: ((title: string, body: string) => boolean) | null
 ): void {
   chatBubbleListener = listener
 }
@@ -25,12 +29,17 @@ export function setChatBubbleListener(
  * @param onClick Optional callback when the notification is clicked
  */
 export function sendNotification(title: string, body: string, onClick?: () => void): void {
-  // Mirror to the in-app chat bubble first so it still works when the OS
-  // suppresses native notifications.
+  // If the chat bubble channel is active it *replaces* the native
+  // notification (mutually exclusive, as requested).
+  let shownInChatBubble = false
   try {
-    chatBubbleListener?.(title, body)
+    shownInChatBubble = chatBubbleListener?.(title, body) ?? false
   } catch (err) {
     console.error('[notification] Chat bubble listener failed:', err)
+  }
+
+  if (shownInChatBubble) {
+    return
   }
 
   if (!Notification.isSupported()) {

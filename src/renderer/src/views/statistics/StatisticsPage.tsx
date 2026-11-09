@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpDown, Clock, Timer, PieChart } from 'lucide-react'
+import { ArrowUpDown, BarChart3, Clock, Timer, PieChart } from 'lucide-react'
 import type { ProgramRangeUsage, UsageEntry } from '@/types'
 import { api } from '@/api/bridge'
 import HorizontalBarChart from '@/components/charts/HorizontalBarChart'
@@ -177,12 +177,30 @@ export const StatisticsPage: React.FC = () => {
 
   const displayData = sortMode === 'today' ? todayUsage : totalUsage
 
+  // Programs with zero time are noise — especially in "today" mode where a
+  // dozen empty rows used to stretch the chart for nothing.
+  const nonZeroData = useMemo(
+    () => displayData.filter((entry) => entry.total_seconds > 0),
+    [displayData]
+  )
+
+  const todayTotalSeconds = useMemo(
+    () => todayUsage.reduce((sum, entry) => sum + entry.total_seconds, 0),
+    [todayUsage]
+  )
+
+  const allTimeTotalSeconds = useMemo(
+    () => totalUsage.reduce((sum, entry) => sum + entry.total_seconds, 0),
+    [totalUsage]
+  )
+
+  const activeProgramCount = useMemo(
+    () => todayUsage.filter((entry) => entry.total_seconds > 0).length,
+    [todayUsage]
+  )
+
   const handleBarClick = (programId: number) => {
     navigate(`/programs/${programId}`)
-  }
-
-  const toggleSortMode = () => {
-    setSortMode((prev) => (prev === 'today' ? 'total' : 'today'))
   }
 
   const toggleSortDir = () => {
@@ -200,51 +218,97 @@ export const StatisticsPage: React.FC = () => {
   return (
     <div className="p-6 max-w-[1000px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">使用统计</h1>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-white">使用统计</h1>
+          <p className="text-xs text-text-secondary mt-1">
+            数据随使用实时更新
+          </p>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <Card className="p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-text-secondary">今日使用</p>
+            <p className="text-lg font-semibold text-white truncate">
+              {formatDuration(todayTotalSeconds)}
+            </p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+            <BarChart3 className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-text-secondary">今日活跃程序</p>
+            <p className="text-lg font-semibold text-white">
+              {activeProgramCount} 个
+            </p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+            <Timer className="w-4 h-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-text-secondary">累计使用</p>
+            <p className="text-lg font-semibold text-white truncate">
+              {formatDuration(allTimeTotalSeconds)}
+            </p>
+          </div>
+        </Card>
       </div>
 
       {/* Sort Controls */}
-      <Card className="p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleSortMode}
-            className={`
-              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
-              transition-all duration-200
-              ${
-                sortMode === 'today'
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-text-secondary hover:text-white hover:bg-white/5'
-              }
-            `}
-          >
-            <Clock className="w-4 h-4" />
-            今日时长
-          </button>
-
-          <button
-            onClick={toggleSortMode}
-            className={`
-              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
-              transition-all duration-200
-              ${
-                sortMode === 'total'
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-text-secondary hover:text-white hover:bg-white/5'
-              }
-            `}
-          >
-            <Timer className="w-4 h-4" />
-            总时长
-          </button>
+      <Card className="p-3 mb-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+            <button
+              onClick={() => setSortMode('today')}
+              aria-pressed={sortMode === 'today'}
+              className={`
+                flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium
+                transition-all duration-200
+                ${
+                  sortMode === 'today'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-text-secondary hover:text-white hover:bg-white/5'
+                }
+              `}
+            >
+              <Clock className="w-4 h-4" />
+              今日时长
+            </button>
+            <button
+              onClick={() => setSortMode('total')}
+              aria-pressed={sortMode === 'total'}
+              className={`
+                flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium
+                transition-all duration-200
+                ${
+                  sortMode === 'total'
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-text-secondary hover:text-white hover:bg-white/5'
+                }
+              `}
+            >
+              <Timer className="w-4 h-4" />
+              总时长
+            </button>
+          </div>
 
           <div className="flex-1" />
 
           <button
             onClick={toggleSortDir}
+            aria-label={sortDir === 'desc' ? '当前降序，点击改为升序' : '当前升序，点击改为降序'}
             className="
-              flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
+              flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium
               text-text-secondary hover:text-white hover:bg-white/5
               transition-all duration-200
             "
@@ -256,16 +320,28 @@ export const StatisticsPage: React.FC = () => {
       </Card>
 
       {/* Chart */}
-      <Card className="p-4">
+      <Card className="p-4 chart-surface">
+        <div className="flex items-center justify-between gap-3 mb-3 px-1">
+          <div>
+            <h2 className="text-base font-semibold text-white">各程序使用时长</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              单位：分钟 · 点击柱子查看该程序详情
+            </p>
+          </div>
+          <span className="text-xs text-text-secondary shrink-0">
+            按{sortMode === 'today' ? '今日' : '累计'}时长
+            {sortDir === 'desc' ? '降序' : '升序'}
+          </span>
+        </div>
         <HorizontalBarChart
-          data={displayData}
+          data={nonZeroData}
           sortAscending={sortDir === 'asc'}
           onBarClick={handleBarClick}
         />
       </Card>
 
       {/* Category analysis */}
-      <Card className="p-5 mt-6">
+      <Card className="p-5 mt-6 chart-surface">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <PieChart className="w-5 h-5 text-primary" />

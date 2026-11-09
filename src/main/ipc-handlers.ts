@@ -62,6 +62,15 @@ export function registerIpcHandlers(
 ): void {
   mainWindowRef = mainWindow
 
+  // Renderer-driven page zoom (Settings → 界面缩放). Using Electron's zoom
+  // factor keeps the layout viewport correct, unlike CSS zoom.
+  ipcMain.on('window:set-zoom', (event, factor: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && Number.isFinite(factor)) {
+      win.webContents.setZoomFactor(Math.min(3, Math.max(0.5, factor)))
+    }
+  })
+
   const broadcastTodosChanged = (): void => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('todos:changed')

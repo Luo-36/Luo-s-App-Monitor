@@ -51,10 +51,6 @@ export const ProgramCard: React.FC<ProgramCardProps> = React.memo(
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
-    const cardBg = program.card_image_path
-      ? `url(${toFileUrl(program.card_image_path)})`
-      : undefined
-
     return (
       <div
         onClick={() => navigate(`/programs/${program.id}`)}
@@ -67,18 +63,23 @@ export const ProgramCard: React.FC<ProgramCardProps> = React.memo(
         "
         role="button"
         tabIndex={0}
+        aria-label={`${program.name}，今日使用 ${formatDuration(usageSeconds)}`}
         onKeyDown={(e) => {
+          // Ignore keys bubbled up from the inner menu button.
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             navigate(`/programs/${program.id}`)
           }
         }}
       >
-        {/* Background */}
-        {cardBg ? (
-          <div
-            className="absolute inset-0 bg-cover bg-center transition-transform duration-300 group-hover:scale-105"
-            style={{ backgroundImage: cardBg }}
+        {/* Background — an <img> so animated GIF cards keep animating */}
+        {program.card_image_path ? (
+          <img
+            src={toFileUrl(program.card_image_path)!}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (
           <div
@@ -94,9 +95,11 @@ export const ProgramCard: React.FC<ProgramCardProps> = React.memo(
         {/* Edit/Delete Dropdown */}
         <div
           ref={dropdownRef}
-          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200"
         >
           <button
+            aria-label={`${program.name} 的更多操作`}
+            aria-expanded={showDropdown}
             onClick={(e) => {
               e.stopPropagation()
               setShowDropdown((prev) => !prev)
@@ -163,11 +166,11 @@ export const ProgramCard: React.FC<ProgramCardProps> = React.memo(
             </div>
           </div>
 
-          {/* Usage time — shown on hover */}
+          {/* Today's usage — shown on hover / keyboard focus */}
           {usageSeconds > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-white/80 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <div className="flex items-center gap-1.5 text-xs text-white/85 bg-black/45 backdrop-blur-sm px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
               <Clock className="w-3 h-3" />
-              <span>{formatDuration(usageSeconds)}</span>
+              <span>今日 · {formatDuration(usageSeconds)}</span>
             </div>
           )}
         </div>

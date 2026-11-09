@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu } from 'electron'
+import { app, BrowserWindow, shell, Menu, protocol } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { initDatabase, getUserProfile, localDate } from './database'
@@ -12,6 +12,16 @@ import { setAutoStart } from './auto-launch'
 import { checkGoalCompletion } from './ipc-handlers'
 import { initReminderScheduler } from './reminder-scheduler'
 import { setChatBubbleListener } from './notification'
+
+// Custom scheme for local images. In dev the renderer is served from
+// http://localhost, and Chromium refuses to render file:// images from that
+// origin. Serving them through a privileged scheme works in both dev and prod.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'luo-file',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  }
+])
 
 // Windows toast notifications need an explicit AppUserModelID. The packaged
 // build must use the same id as the installer shortcut (electron-builder appId);
@@ -91,11 +101,57 @@ if (!gotTheLock) {
 }
 
 function setup(): void {
+  // Serve local images referenced by the renderer through luo-file://.
+  protocol.handle('luo-file', async (request) => {
+    try {
+      // luo-file://local/C:/Users/... — the host is ignored, the pathname is
+      // the real file path.
+      const rawPath = decodeURIComponent(new URL(request.url).pathname)
+      // Windows paths arrive as /C:/Users/...; strip the scheme's leading slash.
+      const filePath =
+        process.platform === 'win32' && /^\/[A-Za-z]:/.test(rawPath)
+          ? rawPath.slice(1)
+          : rawPath
+
+      // Only serve files from the app's own user-data directory.
+      const resolvedPath = path.resolve(filePath)
+      const userDataRoot = path.resolve(app.getPath('userData'))
+      const relative = path.relative(userDataRoot, resolvedPath)
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        return new Response('Forbidden', { status: 403 })
+      }
+
+      const ext = path.extname(resolvedPath).toLowerCase()
+      const mimeTypes: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp',
+        '.svg': 'image/svg+xml'
+      }
+
+      const data = await fs.promises.readFile(resolvedPath)
+      return new Response(data, {
+        headers: { 'content-type': mimeTypes[ext] || 'application/octet-stream' }
+      })
+    } catch (err) {
+      console.error('Failed to serve local image:', request.url, err)
+      return new Response('Not found', { status: 404 })
+    }
+  })
+
   // 1. Initialize database
   initDatabase()
 
   // Remove default app menu (File, Edit, View, etc.)
   Menu.setApplicationMenu(null)
+
+  // electron-vite exposes ELECTRON_RENDERER_URL in dev; VITE_DEV_SERVER_URL
+  // is kept for compatibility with older setups.
+  const devServerUrl =
+    process.env.ELECTRON_RENDERER_URL || process.env.VITE_DEV_SERVER_URL
 
   // 2. Create main window
   mainWindow = new BrowserWindow({
@@ -115,8 +171,8 @@ function setup(): void {
   })
 
   // 3. Load renderer
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl)
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -193,7 +249,7 @@ function setup(): void {
   // Mirror every system notification into the todo ball's chat bubble when
   // the user has enabled that option.
   setChatBubbleListener((title, body) => {
-    todoFloating?.notify(title, body)
+    return todoFloating ? todoFloating.notify(title, body) : false
   })
 
   // 9b. Restore the todo floating window + scheduled reminders

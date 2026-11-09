@@ -6,4 +6,4 @@ if (!window.electronAPI) {
   )
 }
 
-export const api: ElectronAPI & { platform: NodeJS.Platform } = window.electronAPI
+export const api: ElectronAPI = window.electronAPI

@@ -49,12 +49,31 @@ const phaseColors: Record<string, string> = {
   long_break: 'text-amber-400'
 }
 
+const phaseStrokeColors: Record<string, string> = {
+  work: 'stroke-primary',
+  break: 'stroke-emerald-400',
+  long_break: 'stroke-amber-400'
+}
+
+const ballColors: Record<string, string> = {
+  rose: '#D4A5A5',
+  sage: '#A8B5A0',
+  lavender: '#B8A9C9',
+  sky: '#A3B1C6',
+  peach: '#D4BFA5',
+  taupe: '#B8B0A0'
+}
+
+const RING_RADIUS = 128
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
+
 export const PomodoroTimerPage: React.FC = () => {
   const pomodoro = usePomodoroStore()
   const [activePreset, setActivePreset] = useState<PresetKey>('default')
   const [customConfig, setCustomConfig] = useState<PomodoroConfig>(presets.default.config)
   const [showCustom, setShowCustom] = useState(false)
   const [ballImage, setBallImage] = useState<string | null>(null)
+  const [ballColor, setBallColor] = useState('taupe')
   const [ballSize, setBallSize] = useState(72)
   const [ballShape, setBallShape] = useState<'circle' | 'square'>('circle')
   const [uploadingBallImage, setUploadingBallImage] = useState(false)
@@ -88,6 +107,7 @@ export const PomodoroTimerPage: React.FC = () => {
         }
         setCustomConfig(customCfg)
         setBallImage(profile.pomodoro_floating_ball_image ?? null)
+        setBallColor(profile.floating_ball_color || 'taupe')
         setBallSize(profile.pomodoro_ball_size || 72)
         setBallShape(profile.pomodoro_ball_shape === 'square' ? 'square' : 'circle')
       } catch (err) {
@@ -228,6 +248,32 @@ export const PomodoroTimerPage: React.FC = () => {
     )
   }
 
+  const activeConfig =
+    activePreset === 'custom' ? customConfig : presets[activePreset].config
+  const progress =
+    pomodoro.totalSeconds > 0
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            (pomodoro.totalSeconds - pomodoro.remainingSeconds) /
+              pomodoro.totalSeconds
+          )
+        )
+      : 0
+  const nextPhaseText =
+    pomodoro.phase === 'work'
+      ? pomodoro.currentCycle >= pomodoro.totalCycles
+        ? `长休息 ${activeConfig.longBreakMinutes} 分钟`
+        : `休息 ${activeConfig.breakMinutes} 分钟`
+      : `工作 ${activeConfig.workMinutes} 分钟`
+
+  // Idle timers should preview the upcoming work duration instead of 00:00.
+  const displaySeconds =
+    pomodoro.status === 'idle'
+      ? activeConfig.workMinutes * 60
+      : pomodoro.remainingSeconds
+
   return (
     <div className="p-6 max-w-[800px] mx-auto">
       {/* Header */}
@@ -235,27 +281,52 @@ export const PomodoroTimerPage: React.FC = () => {
 
       {/* Timer Display */}
       <Card className="p-8 mb-6 text-center">
-        {/* Phase Label */}
-        <p
-          className={`text-lg font-medium mb-2 ${phaseColors[pomodoro.phase] || 'text-primary'}`}
-        >
-          {phaseLabels[pomodoro.phase] || '工作中'}
-        </p>
+        <div className="relative w-[280px] h-[280px] mx-auto">
+          <svg
+            className="absolute inset-0 w-full h-full -rotate-90"
+            viewBox="0 0 280 280"
+            aria-hidden="true"
+          >
+            <circle
+              cx="140"
+              cy="140"
+              r={RING_RADIUS}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="10"
+            />
+            <circle
+              cx="140"
+              cy="140"
+              r={RING_RADIUS}
+              fill="none"
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={RING_CIRCUMFERENCE}
+              strokeDashoffset={RING_CIRCUMFERENCE * (1 - progress)}
+              className={`${phaseStrokeColors[pomodoro.phase] || 'stroke-primary'} transition-[stroke-dashoffset] duration-500 ease-linear`}
+            />
+          </svg>
 
-        {/* Timer */}
-        <div className="text-7xl font-mono font-bold text-white tracking-wider mb-4">
-          {formatTime(pomodoro.remainingSeconds)}
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <p
+              className={`text-sm font-medium mb-1 ${phaseColors[pomodoro.phase] || 'text-primary'}`}
+            >
+              {phaseLabels[pomodoro.phase] || '工作中'}
+            </p>
+            <div className="text-6xl font-bold text-white tracking-wider tabular-nums">
+              {formatTime(displaySeconds)}
+            </div>
+            {pomodoro.status !== 'idle' && (
+              <p className="text-xs text-text-secondary mt-2">
+                第 {pomodoro.currentCycle}/{pomodoro.totalCycles} 轮
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Cycle Progress */}
-        {pomodoro.status !== 'idle' && (
-          <p className="text-sm text-text-secondary mb-6">
-            第 {pomodoro.currentCycle}/{pomodoro.totalCycles} 轮
-          </p>
-        )}
-
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4">
+        <div className="flex items-center justify-center gap-4 mt-5">
           {pomodoro.status === 'idle' && (
             <Button size="lg" onClick={handleStart}>
               <Play className="w-5 h-5" />
@@ -287,73 +358,115 @@ export const PomodoroTimerPage: React.FC = () => {
             </Button>
           )}
         </div>
+
+        {pomodoro.status !== 'idle' && (
+          <p className="text-xs text-text-secondary mt-4">
+            下一阶段：{nextPhaseText}
+          </p>
+        )}
       </Card>
 
-      {/* Presets */}
-      <Card className="p-6 mb-6">
-        <h3 className="text-sm font-medium text-text-secondary mb-4">预设</h3>
-        <div className="flex gap-3">
-          {(Object.keys(presets) as PresetKey[]).map((key) => (
-            <button
-              key={key}
-              onClick={() => handlePresetChange(key)}
-              className={`
-                px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200
-                ${
-                  activePreset === key
-                    ? 'bg-primary text-white'
-                    : 'text-text-secondary hover:text-white hover:bg-white/5'
-                }
-              `}
-            >
-              {presets[key].label}
-            </button>
-          ))}
-        </div>
-      </Card>
+      {/* Presets + custom config are only editable while idle, so the timer
+          view stays focused during a running session. */}
+      {pomodoro.status === 'idle' && (
+        <>
+          <Card className="p-6 mb-6">
+            <h3 className="text-sm font-medium text-text-secondary mb-4">预设</h3>
+            <div className="flex flex-wrap gap-3">
+              {(Object.keys(presets) as PresetKey[]).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => handlePresetChange(key)}
+                  aria-pressed={activePreset === key}
+                  className={`
+                    px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200
+                    ${
+                      activePreset === key
+                        ? 'bg-primary text-slate-900'
+                        : 'text-text-secondary hover:text-white hover:bg-white/5'
+                    }
+                  `}
+                >
+                  {presets[key].label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-text-secondary mt-3">
+              工作 {activeConfig.workMinutes} 分 · 休息 {activeConfig.breakMinutes} 分 ·
+              长休息 {activeConfig.longBreakMinutes} 分 · {activeConfig.cycles} 轮
+            </p>
+          </Card>
 
-      {/* Custom Config */}
-      {showCustom && (
-        <Card className="p-6 mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Settings2 className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-medium text-text-secondary">自定义配置</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="工作时长 (分钟)"
-              value={customConfig.workMinutes.toString()}
-              onChange={(v) => handleCustomConfigChange('workMinutes', v)}
-              type="number"
-            />
-            <Input
-              label="休息时长 (分钟)"
-              value={customConfig.breakMinutes.toString()}
-              onChange={(v) => handleCustomConfigChange('breakMinutes', v)}
-              type="number"
-            />
-            <Input
-              label="长休息时长 (分钟)"
-              value={customConfig.longBreakMinutes.toString()}
-              onChange={(v) => handleCustomConfigChange('longBreakMinutes', v)}
-              type="number"
-            />
-            <Input
-              label="轮数"
-              value={customConfig.cycles.toString()}
-              onChange={(v) => handleCustomConfigChange('cycles', v)}
-              type="number"
-            />
-          </div>
-        </Card>
+          {/* Custom Config */}
+          {showCustom && (
+            <Card className="p-6 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Settings2 className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-medium text-text-secondary">自定义配置</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="工作时长 (分钟)"
+                  value={customConfig.workMinutes.toString()}
+                  onChange={(v) => handleCustomConfigChange('workMinutes', v)}
+                  type="number"
+                />
+                <Input
+                  label="休息时长 (分钟)"
+                  value={customConfig.breakMinutes.toString()}
+                  onChange={(v) => handleCustomConfigChange('breakMinutes', v)}
+                  type="number"
+                />
+                <Input
+                  label="长休息时长 (分钟)"
+                  value={customConfig.longBreakMinutes.toString()}
+                  onChange={(v) => handleCustomConfigChange('longBreakMinutes', v)}
+                  type="number"
+                />
+                <Input
+                  label="轮数"
+                  value={customConfig.cycles.toString()}
+                  onChange={(v) => handleCustomConfigChange('cycles', v)}
+                  type="number"
+                />
+              </div>
+            </Card>
+          )}
+        </>
       )}
 
       {/* Floating Ball Settings */}
       <Card className="p-6 mb-6">
         <h3 className="text-sm font-medium text-text-secondary mb-4">悬浮球</h3>
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-white">启用悬浮球</span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className="w-10 h-10 shrink-0 overflow-hidden border border-white/10 bg-white/10"
+                style={{
+                  borderRadius: ballShape === 'circle' ? '9999px' : '12px',
+                  backgroundColor: ballImage
+                    ? undefined
+                    : ballColors[ballColor] || ballColors.taupe
+                }}
+              >
+                {ballImage && (
+                  <img
+                    src={toFileUrl(ballImage) || ''}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm text-white">启用悬浮球</div>
+                <div className="text-xs text-text-secondary">
+                  {pomodoro.floatingBallEnabled
+                    ? '番茄钟运行时显示在桌面最顶层'
+                    : '关闭后不显示桌面悬浮球'}
+                </div>
+              </div>
+            </div>
             <Switch
               checked={pomodoro.floatingBallEnabled}
               onChange={handleFloatingBallToggle}
@@ -361,77 +474,69 @@ export const PomodoroTimerPage: React.FC = () => {
           </div>
 
           {pomodoro.floatingBallEnabled && (
-            <p className="text-xs text-text-secondary/60">番茄钟运行时，悬浮球将显示在桌面最顶层</p>
-          )}
-
-          <div className="pt-4 border-t border-white/5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm text-white">悬浮球背景</p>
-                <p className="text-xs text-text-secondary mt-0.5">
-                  支持透明 PNG；未设置时使用悬浮球颜色
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {ballImage && (
-                  <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0">
-                    <img
-                      src={toFileUrl(ballImage) || ''}
-                      alt="悬浮球背景"
-                      className="w-full h-full object-cover"
-                    />
+            <>
+              <div className="pt-4 border-t border-white/5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-white">悬浮球背景</p>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      支持透明 PNG；未设置时使用悬浮球颜色
+                    </p>
                   </div>
-                )}
-                {ballImage && (
-                  <Button variant="ghost" size="sm" onClick={handleClearBallImage}>
-                    <Trash2 className="w-4 h-4" />
-                    清除
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleUploadBallImage}
-                  loading={uploadingBallImage}
-                >
-                  <ImagePlus className="w-4 h-4" />
-                  上传
-                </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {ballImage && (
+                      <Button variant="ghost" size="sm" onClick={handleClearBallImage}>
+                        <Trash2 className="w-4 h-4" />
+                        清除
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleUploadBallImage}
+                      loading={uploadingBallImage}
+                    >
+                      <ImagePlus className="w-4 h-4" />
+                      上传
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="pt-4 border-t border-white/5 space-y-3">
-            <Slider
-              label="悬浮球大小"
-              value={ballSize}
-              onChange={handleBallSizeChange}
-              min={48}
-              max={140}
-              step={4}
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-white">悬浮球形状</span>
-              <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
-                {(['circle', 'square'] as const).map((shape) => (
-                  <button
-                    key={shape}
-                    onClick={() => handleBallShapeChange(shape)}
-                    className={`
-                      px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
-                      ${
-                        ballShape === shape
-                          ? 'bg-primary/20 text-primary'
-                          : 'text-text-secondary hover:text-white hover:bg-white/5'
-                      }
-                    `}
-                  >
-                    {shape === 'circle' ? '圆形' : '方形'}
-                  </button>
-                ))}
+              <div className="pt-4 border-t border-white/5 space-y-3">
+                <Slider
+                  label="悬浮球大小"
+                  value={ballSize}
+                  onChange={handleBallSizeChange}
+                  min={48}
+                  max={140}
+                  step={4}
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-white">悬浮球形状</span>
+                  <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+                    {(['circle', 'square'] as const).map((shape) => (
+                      <button
+                        key={shape}
+                        onClick={() => handleBallShapeChange(shape)}
+                        aria-pressed={ballShape === shape}
+                        className={`
+                          px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200
+                          ${
+                            ballShape === shape
+                              ? 'bg-primary/20 text-primary'
+                              : 'text-text-secondary hover:text-white hover:bg-white/5'
+                          }
+                        `}
+                      >
+                        {shape === 'circle' ? '圆形' : '方形'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </Card>
 

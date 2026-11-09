@@ -6,6 +6,7 @@ import { toFileUrl } from '@/utils/fileUrl'
 
 interface GoalCardProps {
   goal: Goal
+  onOpen?: () => void
   onEdit?: () => void
   onDelete?: () => void
 }
@@ -29,7 +30,7 @@ function getGradientColors(id: number): string {
   return gradients[id % gradients.length]
 }
 
-export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onDelete }) => {
+export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onOpen, onEdit, onDelete }) => {
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -62,13 +63,30 @@ export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onD
 
   return (
     <div
-      className="
+      onClick={onOpen}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `查看目标 ${goal.name}` : undefined}
+      onKeyDown={
+        onOpen
+          ? (e) => {
+              // Ignore keys bubbled up from the inner menu button.
+              if (e.target !== e.currentTarget) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onOpen()
+              }
+            }
+          : undefined
+      }
+      className={`
         relative overflow-hidden rounded-2xl
         bg-slate-800/60 border border-white/10
         hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10
         transition-all duration-300
         aspect-[4/3] group
-      "
+        ${onOpen ? 'cursor-pointer' : ''}
+      `}
     >
       {/* Background */}
       {cardBg ? (
@@ -89,10 +107,11 @@ export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onD
       <div className="absolute top-3 left-3">
         <span
           className={`
-            inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
+            inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold
+            backdrop-blur-md shadow-md shadow-black/20 border
             ${isRestriction
-              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-              : 'bg-primary/20 text-primary border border-primary/30'
+              ? 'bg-amber-400/95 text-slate-900 border-amber-200/50'
+              : 'bg-primary/95 text-slate-900 border-white/40'
             }
           `}
         >
@@ -100,16 +119,16 @@ export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onD
         </span>
       </div>
 
-      {/* Status Icon */}
+      {/* Status Icon — kept clear of the ··· menu on the far right */}
       {isRestriction ? (
         isExceeded && (
-          <div className="absolute top-3 right-3">
+          <div className="absolute top-3 right-12">
             <AlertTriangle className="w-6 h-6 text-red-400 drop-shadow-lg" />
           </div>
         )
       ) : (
         isCompleted && (
-          <div className="absolute top-3 right-3">
+          <div className="absolute top-3 right-12">
             <CheckCircle className="w-6 h-6 text-emerald-400 drop-shadow-lg" />
           </div>
         )
@@ -118,9 +137,11 @@ export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onD
       {/* Edit/Delete Dropdown */}
       <div
         ref={dropdownRef}
-        className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200"
       >
         <button
+          aria-label={`${goal.name} 的更多操作`}
+          aria-expanded={showDropdown}
           onClick={(e) => {
             e.stopPropagation()
             setShowDropdown((prev) => !prev)
@@ -164,7 +185,7 @@ export const GoalCard: React.FC<GoalCardProps> = React.memo(({ goal, onEdit, onD
         </h3>
 
         {goal.description && (
-          <p className="text-xs text-text-secondary/80 line-clamp-1">
+          <p className="text-xs text-white/75 line-clamp-1 drop-shadow-sm">
             {goal.description}
           </p>
         )}

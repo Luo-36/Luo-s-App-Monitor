@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, X } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import Input from '@/components/ui/Input'
 import Button from '@/components/ui/Button'
@@ -42,6 +42,9 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Capture which image slot the file picker was opened for. Reading state in
+  // the change handler can race with the native dialog.
+  const pickTargetRef = useRef<'icon' | 'card' | null>(null)
 
   // Reset form state when the modal opens or editProgram changes,
   // so editing a card pre-fills its existing values (name/icon/card image).
@@ -77,11 +80,13 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
   }
 
   const handleUploadIcon = () => {
+    pickTargetRef.current = 'icon'
     setCropping('icon')
     openImagePicker('icon')
   }
 
   const handleUploadCard = () => {
+    pickTargetRef.current = 'card'
     setCropping('card')
     openImagePicker('card')
   }
@@ -158,6 +163,16 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
         onClose={onClose}
         title={editProgram ? '编辑程序' : '添加程序'}
         maxWidth="max-w-md"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose}>
+              取消
+            </Button>
+            <Button onClick={handleSave} loading={saving}>
+              {editProgram ? '保存' : '添加'}
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <Input
@@ -214,6 +229,14 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
                     className="w-8 h-8 rounded-md object-contain border border-white/10"
                   />
                   <span className="text-xs text-emerald-400">已选择</span>
+                  <button
+                    onClick={() => setIconSrc(null)}
+                    aria-label="移除图标"
+                    title="移除图标"
+                    className="p-1 rounded-md text-text-secondary hover:text-red-400 hover:bg-white/5 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
             </div>
@@ -228,23 +251,32 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
                 选择文件
               </Button>
               {cardSrc && (
-                <span className="text-xs text-emerald-400">已选择</span>
+                <div className="flex items-center gap-2">
+                  <img
+                    src={toFileUrl(cardSrc) || ''}
+                    alt="卡片预览"
+                    className="w-16 h-9 rounded-lg object-cover border border-white/10"
+                  />
+                  <span className="text-xs text-emerald-400">已选择</span>
+                  <button
+                    onClick={() => setCardSrc(null)}
+                    aria-label="移除卡片背景"
+                    title="移除卡片背景"
+                    className="p-1 rounded-md text-text-secondary hover:text-red-400 hover:bg-white/5 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
             </div>
+            <p className="text-xs text-text-secondary/60">
+              支持 PNG / JPG / GIF；GIF 会保留动画（不进入裁剪）
+            </p>
           </div>
 
           {error && (
             <p className="text-sm text-red-400">{error}</p>
           )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="secondary" onClick={onClose}>
-              取消
-            </Button>
-            <Button onClick={handleSave} loading={saving}>
-              {editProgram ? '保存' : '添加'}
-            </Button>
-          </div>
         </div>
       </Modal>
 
@@ -257,9 +289,36 @@ export const AddProgramModal: React.FC<AddProgramModalProps> = ({
         onChange={(e) => {
           const file = e.target.files?.[0]
           if (file) {
+            const target = pickTargetRef.current
             const reader = new FileReader()
-            reader.onload = () => {
-              setCropImageSrc(reader.result as string)
+            reader.onload = async () => {
+              const dataUrl = reader.result as string
+
+              // GIFs must bypass the canvas cropper — converting them to PNG
+              // would drop every frame. Save the original bytes instead.
+              if (file.type === 'image/gif' && target) {
+                try {
+                  if (target === 'icon') {
+                    const path = await api.saveImage(
+                      dataUrl, 'icons', `icon_${Date.now()}.gif`
+                    )
+                    setIconSrc(path)
+                  } else {
+                    const path = await api.saveImage(
+                      dataUrl, 'cards', `card_${Date.now()}.gif`
+                    )
+                    setCardSrc(path)
+                  }
+                } catch (err) {
+                  console.error('Failed to save GIF:', err)
+                } finally {
+                  setCropping(null)
+                  setCropImageSrc('')
+                }
+                return
+              }
+
+              setCropImageSrc(dataUrl)
             }
             reader.readAsDataURL(file)
           }

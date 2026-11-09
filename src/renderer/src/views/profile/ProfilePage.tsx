@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { Camera, Heart, Save } from 'lucide-react'
 import type { UserProfile, CropData } from '@/types'
 import { api } from '@/api/bridge'
+import { toast } from '@/store/useToastStore'
 import { toFileUrl } from '@/utils/fileUrl'
 import { cropImageToDataUrl } from '@/utils/cropImage'
 import Card from '@/components/ui/Card'
@@ -82,8 +83,10 @@ export const ProfilePage: React.FC = () => {
       await api.updateProfile(updates)
       const updated = await api.getProfile()
       setProfile(updated)
+      toast.success('个人资料已保存')
     } catch (err) {
       console.error('Failed to save profile:', err)
+      toast.error('保存失败，请重试')
     } finally {
       setSaving(false)
     }
@@ -156,22 +159,38 @@ export const ProfilePage: React.FC = () => {
 
       {/* Profile Form */}
       <Card className="p-6 mb-6 space-y-5">
-        <Input
-          label="昵称"
-          value={nickname}
-          onChange={setNickname}
-          placeholder="输入你的昵称"
-        />
+        <div>
+          <Input
+            label="昵称"
+            value={nickname}
+            onChange={setNickname}
+            placeholder="输入你的昵称"
+            maxLength={20}
+          />
+          <p className="text-[11px] text-text-secondary/60 text-right mt-1">
+            {nickname.length}/20
+          </p>
+        </div>
 
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-text-secondary">
-            个人简介
-          </label>
+          <div className="flex items-center justify-between">
+            <label
+              htmlFor="profile-bio"
+              className="block text-sm font-medium text-text-secondary"
+            >
+              个人简介
+            </label>
+            <span className="text-[11px] text-text-secondary/60">
+              {bio.length}/120
+            </span>
+          </div>
           <textarea
+            id="profile-bio"
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             placeholder="介绍一下自己..."
             rows={4}
+            maxLength={120}
             className="
               w-full px-4 py-2.5 rounded-xl text-sm text-white
               bg-white/5 border border-white/10

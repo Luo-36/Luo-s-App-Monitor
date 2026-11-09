@@ -18,7 +18,21 @@ export default {
         'text-secondary': 'rgba(var(--text-secondary), <alpha-value>)',
       },
       fontFamily: {
-        sans: ['"Microsoft YaHei"', '"PingFang SC"', 'sans-serif'],
+        // One consistent sans-serif stack for the whole app (and the
+        // floating windows use the same stack in their inline CSS).
+        sans: [
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei"',
+          '"Helvetica Neue"',
+          'Helvetica',
+          'Arial',
+          'sans-serif',
+        ],
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',

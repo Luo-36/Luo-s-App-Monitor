@@ -71,6 +71,21 @@ export const ProgramDetailPage: React.FC = () => {
     load()
   }, [id, range])
 
+  // Keep today's number live while the page is open.
+  useEffect(() => {
+    if (!id) return
+    const programId = Number(id)
+    const unsub = api.onTrackingTick((data) => {
+      const entry = data.todayUsage.find((u) => u.program_id === programId)
+      const live =
+        data.currentProgram?.programId === programId
+          ? data.currentProgram.elapsedSeconds
+          : 0
+      setTodaySeconds((entry?.total_seconds ?? 0) + live)
+    })
+    return () => unsub()
+  }, [id])
+
   // Hourly distribution for the selected day
   useEffect(() => {
     if (!id) return
@@ -156,11 +171,12 @@ export const ProgramDetailPage: React.FC = () => {
           <button
             key={tab}
             onClick={() => setRange(tab)}
+            aria-pressed={range === tab}
             className={`
               px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200
               ${
                 range === tab
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary text-slate-900'
                   : 'text-text-secondary hover:text-white hover:bg-white/5'
               }
             `}
@@ -171,12 +187,12 @@ export const ProgramDetailPage: React.FC = () => {
       </div>
 
       {/* Line Chart */}
-      <Card className="p-4 mb-6">
+      <Card className="p-4 mb-6 chart-surface">
         <LineChart data={usageData} />
       </Card>
 
       {/* Hourly distribution */}
-      <Card className="p-4 mb-6">
+      <Card className="p-4 mb-6 chart-surface">
         <div className="flex items-end justify-between gap-4 mb-3">
           <div>
             <h2 className="text-base font-semibold text-white">时段分布</h2>
@@ -214,7 +230,7 @@ export const ProgramDetailPage: React.FC = () => {
           </div>
           <div>
             <p className="text-xs text-text-secondary">
-              {range === '7d' ? '本周总计' : '本月总计'}
+              {range === '7d' ? '最近 7 天总计' : '最近 30 天总计'}
             </p>
             <p className="text-lg font-semibold text-white">
               {formatDuration(getWeekTotal())}

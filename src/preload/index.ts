@@ -231,6 +231,11 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('capture:stop')
   },
 
+  // ===== Window =====
+  setZoomFactor(factor: number): void {
+    ipcRenderer.send('window:set-zoom', factor)
+  },
+
   // ===== Events (main -> renderer) =====
   onTrackingTick(callback: (data: TrackingTick) => void): () => void {
     return safeOn('tracking:tick', callback)

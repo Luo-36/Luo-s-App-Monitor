@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import { Clock } from 'lucide-react'
 
 interface TimePickerProps {
@@ -14,16 +14,22 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   label,
   className = ''
 }) => {
+  const id = useId()
+
   return (
     <div className={`space-y-1.5 ${className}`}>
       {label && (
-        <label className="block text-sm font-medium text-text-secondary">
+        <label
+          htmlFor={id}
+          className="block text-sm font-medium text-text-secondary"
+        >
           {label}
         </label>
       )}
       <div className="relative">
         <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
         <input
+          id={id}
           type="time"
           value={value}
           onChange={(e) => onChange(e.target.value)}

@@ -15,13 +15,17 @@ const themeRgbValues: Record<string, { primary: string; light: string; dark: str
   taupe: { primary: '184, 176, 160', light: '204, 198, 186', dark: '160, 150, 135' }
 }
 
+// The theme colour is a light pastel for accents/buttons, but using it as the
+// page background made white/secondary text unreadable. These are the same
+// hues mixed down to a dark tint so the app keeps its colour identity while
+// staying legible even when the user has no background image.
 const themeBgColors: Record<string, string> = {
-  rose: '#D4A5A5',
-  sage: '#A8B5A0',
-  lavender: '#B8A9C9',
-  sky: '#A3B1C6',
-  peach: '#D4BFA5',
-  taupe: '#B8B0A0'
+  rose: '#3A2B30',
+  sage: '#2B332B',
+  lavender: '#302B3A',
+  sky: '#28323D',
+  peach: '#3A322A',
+  taupe: '#302F2A'
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {

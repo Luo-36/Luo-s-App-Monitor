@@ -3,6 +3,8 @@ import { RouterProvider } from 'react-router-dom'
 import ThemeProvider from '@/components/ThemeProvider'
 import BackgroundLayer from '@/components/background/BackgroundLayer'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
+import ToastViewport from '@/components/ui/Toast'
+import ConfirmDialogHost from '@/components/ui/ConfirmDialog'
 import { router } from './routes'
 import { api } from '@/api/bridge'
 import { useThemeStore } from '@/store/useThemeStore'
@@ -29,9 +31,10 @@ const App: React.FC = () => {
           store.setThemeColor(profile.theme_color)
         }
 
-        // Apply GUI scale via root font-size
+        // Apply GUI scale through Electron's page zoom so the layout viewport
+        // (and px-based charts) scale together without overflowing.
         const scale = (profile.gui_scale ?? 100) / 100
-        document.documentElement.style.fontSize = `${16 * scale}px`
+        api.setZoomFactor(scale)
       })
       .catch(() => {})
   }, [])
@@ -48,6 +51,8 @@ const App: React.FC = () => {
       >
         <RouterProvider router={router} />
       </Suspense>
+      <ToastViewport />
+      <ConfirmDialogHost />
     </ThemeProvider>
   )
 }

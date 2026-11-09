@@ -22,8 +22,8 @@ const MIN_TODO_HEIGHT = 160
 const MIN_NOTIFICATION_HEIGHT = 96
 /** How long a chat-bubble notification stays visible. */
 const NOTIFICATION_DURATION_MS = 8000
-
-type TailCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
+/** Small transparent margin around the combined ball + bubble bounds. */
+const BUBBLE_PAD = 8
 
 interface WindowLayout {
   expanded: boolean
@@ -34,7 +34,6 @@ interface WindowLayout {
   bubbleTop: number
   bubbleWidth: number
   bubbleHeight: number
-  tail: TailCorner
 }
 
 interface BubblePlacement {
@@ -42,7 +41,6 @@ interface BubblePlacement {
   y: number
   width: number
   height: number
-  tail: TailCorner
 }
 
 interface ChatNotification {
@@ -80,8 +78,7 @@ export class TodoFloatingWindow {
     bubbleLeft: 0,
     bubbleTop: 0,
     bubbleWidth: BUBBLE_WIDTH,
-    bubbleHeight: BUBBLE_HEIGHT,
-    tail: 'bottom-right'
+    bubbleHeight: BUBBLE_HEIGHT
   }
 
   constructor() {
@@ -141,11 +138,13 @@ export class TodoFloatingWindow {
 
   /**
    * Shows a notification as a chat bubble attached to the floating ball.
-   * No-op when the floating window or the chat-notification option is off.
+   * Returns true when the bubble actually displayed it (the caller then
+   * skips the native system notification). No-op when the floating window
+   * or the chat-notification option is off.
    */
-  notify(title: string, body: string): void {
-    if (!this.enabled || !this.chatNotificationsEnabled) return
-    if (!this.window || this.window.isDestroyed()) return
+  notify(title: string, body: string): boolean {
+    if (!this.enabled || !this.chatNotificationsEnabled) return false
+    if (!this.window || this.window.isDestroyed()) return false
 
     this.notification = { title: title || '通知', body: body || '' }
     this.sendNotificationContent()
@@ -157,6 +156,8 @@ export class TodoFloatingWindow {
 
     if (this.notificationTimer) clearTimeout(this.notificationTimer)
     this.notificationTimer = setTimeout(() => this.clearNotification(), NOTIFICATION_DURATION_MS)
+
+    return true
   }
 
   /** Ask the floating window to re-fetch the todo list. */
@@ -322,20 +323,11 @@ export class TodoFloatingWindow {
 
     x = Math.max(areaLeft, Math.min(x, areaRight - bubbleWidth))
 
-    // Point the tail toward the ball.
-    const ballCx = ball.x + this.ballSize / 2
-    const ballCy = ball.y + this.ballSize / 2
-    const bubbleCx = x + bubbleWidth / 2
-    const bubbleCy = y + height / 2
-    const tailX = bubbleCx <= ballCx ? 'right' : 'left'
-    const tailY = bubbleCy <= ballCy ? 'bottom' : 'top'
-
     return {
       x,
       y,
       width: bubbleWidth,
-      height,
-      tail: `${tailY}-${tailX}` as TailCorner
+      height
     }
   }
 
@@ -366,8 +358,7 @@ export class TodoFloatingWindow {
         bubbleLeft: 0,
         bubbleTop: 0,
         bubbleWidth: BUBBLE_WIDTH,
-        bubbleHeight: 0,
-        tail: 'bottom-right'
+        bubbleHeight: 0
       }
       this.sendLayout()
       return
@@ -379,10 +370,12 @@ export class TodoFloatingWindow {
 
     const bubble = this.computeBubblePlacement(ball, BUBBLE_WIDTH, preferredHeight, minHeight)
 
-    const left = Math.min(ball.x - BALL_MARGIN, bubble.x)
-    const top = Math.min(ball.y - BALL_MARGIN, bubble.y)
-    const right = Math.max(ball.x + this.ballSize + BALL_MARGIN, bubble.x + bubble.width)
-    const bottom = Math.max(ball.y + this.ballSize + BALL_MARGIN, bubble.y + bubble.height)
+    // A small transparent margin keeps the bubble edge from being clipped
+    // by the window bounds.
+    const left = Math.min(ball.x - BALL_MARGIN, bubble.x) - BUBBLE_PAD
+    const top = Math.min(ball.y - BALL_MARGIN, bubble.y) - BUBBLE_PAD
+    const right = Math.max(ball.x + this.ballSize + BALL_MARGIN, bubble.x + bubble.width) + BUBBLE_PAD
+    const bottom = Math.max(ball.y + this.ballSize + BALL_MARGIN, bubble.y + bubble.height) + BUBBLE_PAD
 
     const ballLeft = ball.x - left
     const ballTop = ball.y - top
@@ -403,8 +396,7 @@ export class TodoFloatingWindow {
       bubbleLeft: bubble.x - left,
       bubbleTop: bubble.y - top,
       bubbleWidth: bubble.width,
-      bubbleHeight: bubble.height,
-      tail: bubble.tail
+      bubbleHeight: bubble.height
     }
     this.sendLayout()
   }
@@ -500,13 +492,14 @@ export class TodoFloatingWindow {
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Helvetica Neue',Arial,sans-serif;}
 #ballWrap{
   position:absolute;left:4px;top:4px;
   width:var(--ball-size,56px);height:var(--ball-size,56px);
-  cursor:grab;
+  cursor:grab;transition:transform 0.16s ease;
 }
-#ballWrap:active{cursor:grabbing;}
+#ballWrap:hover{transform:scale(1.04);}
+#ballWrap:active{cursor:grabbing;transform:scale(0.98);}
 #ball{
   width:100%;height:100%;border-radius:var(--ball-radius,50%);position:relative;
   background:var(--accent);
@@ -522,27 +515,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
 #ballIcon{color:#0F172A;pointer-events:none;opacity:0.85;}
 #bubble{
   position:absolute;display:none;flex-direction:column;
-  border-radius:16px;background:#0F172A;
-  border:1px solid rgba(255,255,255,0.10);
-  box-shadow:0 16px 42px rgba(0,0,0,0.45);
+  border-radius:18px;background:#0F172A;
+  border:1px solid rgba(255,255,255,0.12);
   color:#F8FAFC;
+  transform-origin:100% 100%;
+  animation:bubbleIn 160ms cubic-bezier(0.2,0.8,0.2,1);
 }
-#tail{
-  position:absolute;width:12px;height:12px;background:#0F172A;
-  transform:rotate(45deg);border-radius:2px;
+@keyframes bubbleIn{
+  from{opacity:0;transform:scale(0.96);}
+  to{opacity:1;transform:scale(1);}
 }
-#bubble.tail-bottom-right #tail{bottom:-6px;right:16px;}
-#bubble.tail-bottom-left #tail{bottom:-6px;left:16px;}
-#bubble.tail-top-right #tail{top:-6px;right:16px;}
-#bubble.tail-top-left #tail{top:-6px;left:16px;}
-#todoView{display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden;border-radius:16px;}
+#todoView{display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden;border-radius:18px;}
 #header{
-  height:40px;flex-shrink:0;display:flex;align-items:center;gap:8px;
-  padding:0 12px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:grab;
+  height:44px;flex-shrink:0;display:flex;align-items:center;gap:8px;
+  padding:0 14px;border-bottom:1px solid rgba(255,255,255,0.06);cursor:grab;
 }
 #header:active{cursor:grabbing;}
-#title{font-size:13px;font-weight:600;letter-spacing:0.4px;}
-#count{font-size:11px;color:#94A3B8;}
+#title{font-size:13.5px;font-weight:600;letter-spacing:0.3px;}
+#count{
+  display:none;font-size:11px;color:#94A3B8;
+  background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:999px;
+  white-space:nowrap;
+}
 .hbtn{
   width:22px;height:22px;border:none;border-radius:6px;
   background:transparent;color:#94A3B8;font-size:13px;line-height:1;cursor:pointer;
@@ -550,15 +544,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
 }
 .hbtn:hover{background:rgba(255,255,255,0.08);color:#fff;}
 #collapse{margin-left:auto;}
-#list{flex:1;overflow-y:auto;padding:8px;}
-#empty{text-align:center;color:#64748B;font-size:12px;padding:32px 12px;line-height:1.7;}
+#list{flex:1;overflow-y:auto;padding:8px 10px;}
+#empty{text-align:center;color:#64748B;font-size:12px;padding:34px 12px;line-height:1.7;}
 .todo{
-  display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:8px;
-  font-size:12.5px;line-height:1.4;
+  display:flex;align-items:flex-start;gap:9px;padding:8px 9px;border-radius:10px;
+  font-size:12.5px;line-height:1.45;
 }
-.todo:hover{background:rgba(255,255,255,0.05);}
+.todo:hover{background:rgba(255,255,255,0.055);}
 .check{
-  width:15px;height:15px;flex-shrink:0;margin-top:1px;border-radius:4px;
+  width:16px;height:16px;flex-shrink:0;margin-top:1px;border-radius:5px;
   border:1.5px solid #64748B;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:background 0.12s,border-color 0.12s;
@@ -575,26 +569,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
 .todo:hover .del{opacity:1;}
 .del:hover{color:#F87171;}
 #addRow{
-  flex-shrink:0;display:flex;gap:6px;padding:8px;
+  flex-shrink:0;display:flex;gap:8px;padding:10px;
   border-top:1px solid rgba(255,255,255,0.06);
 }
 #newTodo{
-  flex:1;min-width:0;padding:7px 10px;border-radius:8px;font-size:12px;
+  flex:1;min-width:0;padding:8px 11px;border-radius:10px;font-size:12px;
   background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
   color:#fff;outline:none;
+  transition:border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 #newTodo::placeholder{color:#64748B;}
-#newTodo:focus{border-color:var(--accent);}
+#newTodo:focus{
+  border-color:var(--accent);background:rgba(255,255,255,0.08);
+  box-shadow:0 0 0 3px rgba(255,255,255,0.06);
+}
 #addBtn{
-  flex-shrink:0;padding:0 12px;border:none;border-radius:8px;font-size:12px;
+  flex-shrink:0;padding:0 14px;border:none;border-radius:10px;font-size:12px;
   font-weight:600;color:#0F172A;background:var(--accent);cursor:pointer;
+  transition:filter 0.15s, transform 0.15s;
 }
 #addBtn:hover{filter:brightness(1.08);}
+#addBtn:active{transform:scale(0.97);}
 #notificationView{
   display:none;flex-direction:column;flex:1;min-height:0;
-  padding:12px 14px;gap:6px;border-radius:16px;
+  padding:14px 16px;gap:8px;border-radius:18px;
 }
-#notifHeader{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+#notifHeader{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+#notifIconWrap{
+  width:30px;height:30px;border-radius:10px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb, var(--accent) 18%, transparent);
+}
 #notifIcon{color:var(--accent);flex-shrink:0;}
 #notifTitle{
   flex:1;min-width:0;font-size:13px;font-weight:600;color:#fff;
@@ -630,13 +635,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',s
   </div>
   <div id="notificationView">
     <div id="notifHeader">
-      <svg id="notifIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      <div id="notifIconWrap">
+        <svg id="notifIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+      </div>
       <span id="notifTitle">通知</span>
       <button id="notifClose" class="hbtn" title="关闭通知">✕</button>
     </div>
     <div id="notifBody"></div>
   </div>
-  <div id="tail"></div>
 </div>
 <script>
 var ipc = require('electron').ipcRenderer;
@@ -685,6 +691,7 @@ function render(todos) {
   currentTodos = todos || [];
   pendingCount = currentTodos.filter(function (t) { return !t.is_done; }).length;
   countEl.textContent = pendingCount > 0 ? pendingCount + ' 项' : '';
+  countEl.style.display = pendingCount > 0 ? 'inline-block' : 'none';
   updateBadge();
 
   if (currentTodos.length === 0) {
@@ -788,7 +795,6 @@ ipc.on('todo:win:layout', function (e, l) {
   bubbleEl.style.top = l.bubbleTop + 'px';
   bubbleEl.style.width = l.bubbleWidth + 'px';
   bubbleEl.style.height = l.bubbleHeight + 'px';
-  bubbleEl.className = 'tail-' + l.tail;
 
   var showNotification = l.mode === 'notification';
   notificationView.style.display = showNotification ? 'flex' : 'none';

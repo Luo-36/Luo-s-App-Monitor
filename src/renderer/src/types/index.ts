@@ -258,6 +258,13 @@ export interface ElectronAPI {
   startCapture(): Promise<void>
   stopCapture(): Promise<void>
   onCaptureDetected(callback: (processName: string) => void): () => void
+
+  // Window
+  /** Set the renderer page zoom factor (1 = 100%). */
+  setZoomFactor(factor: number): void
+
+  /** Node platform string, e.g. "win32". */
+  platform: string
 }
 
 declare global {

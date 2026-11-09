@@ -155,6 +155,16 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
         onClose={onClose}
         title={editGoal ? '编辑目标' : '添加目标'}
         maxWidth="max-w-md"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose}>
+              取消
+            </Button>
+            <Button onClick={handleSave} loading={saving}>
+              {editGoal ? '保存' : '添加'}
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <Input
@@ -317,15 +327,6 @@ export const AddGoalModal: React.FC<AddGoalModalProps> = ({
           {error && (
             <p className="text-sm text-red-400">{error}</p>
           )}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="secondary" onClick={onClose}>
-              取消
-            </Button>
-            <Button onClick={handleSave} loading={saving}>
-              {editGoal ? '保存' : '添加'}
-            </Button>
-          </div>
         </div>
       </Modal>
 
